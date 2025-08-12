@@ -14,19 +14,24 @@ public class ActuatorDisplay : MonoBehaviour
     public Color baseColor = new Color(0, 0, 0, 0); // 검은색(알파 0)
 
     [Header("Fan Control")]
-    public Toggle fanToggle; // Toggle conponant
+    public Toggle fanToggle; // Toggle component
 
     [Header("Fan Toggle Visual")]
     public Image fanBackground;          // 둥근 직사각형 바탕(UISprite/Sliced)
     public RectTransform fanHandle;      // 흰색 원(Handle, Knob)
     public Color fanOnColor  = new Color32(65,192,83,255);   // green
-    public Color fanOffColor = new Color32(150,150,150,255);  // grey
+    public Color fanOffColor = new Color32(150,150,150,255); // grey
     public float fanPadding = 2f;        // 좌우 여백
     public float fanAnimTime = 0.15f;    // 슬라이드 시간(초)
 
     [Header("Fan Handle Fixed Positions")]
     public Vector2 fanOffAnchoredPos = new Vector2(10f, -10f);
     public Vector2 fanOnAnchoredPos  = new Vector2(30f, -10f);
+
+    [Header("Fetch Settings")]
+    public bool fetchOnStart = true;     // 시작 시 1회 서버값 당겨오기
+    public bool autoRefresh  = false;    // 주기적으로 최신값 동기화
+    public float refreshInterval = 5f;
 
     private bool isDragging = false;
 
@@ -47,6 +52,11 @@ public class ActuatorDisplay : MonoBehaviour
             CacheFanPositions();
             ApplyFanInstant(fanToggle.isOn); // 시작 상태 반영
         }
+
+        // 서버 최신값 → UI에 1회 반영
+        if (fetchOnStart) StartCoroutine(FetchActuatorsOnce());
+        // 센서처럼 주기 갱신 원하면 켜기
+        if (autoRefresh)  StartCoroutine(AutoRefreshLoop());
     }
 
     void Update()
@@ -133,7 +143,6 @@ public class ActuatorDisplay : MonoBehaviour
     void CacheFanPositions()
     {
         if (fanBackground == null || fanHandle == null) return;
-
         fanOffPos = fanOffAnchoredPos;
         fanOnPos  = fanOnAnchoredPos;
     }
@@ -141,7 +150,6 @@ public class ActuatorDisplay : MonoBehaviour
     void ApplyFanInstant(bool isOn)
     {
         if (fanBackground == null || fanHandle == null) return;
-
         fanBackground.color = isOn ? fanOnColor : fanOffColor;
         fanHandle.anchoredPosition = isOn ? fanOnPos : fanOffPos;
     }
@@ -176,5 +184,79 @@ public class ActuatorDisplay : MonoBehaviour
     {
         CacheFanPositions();
         if (fanToggle != null) ApplyFanInstant(fanToggle.isOn);
+    }
+
+    // ====== GET으로 최신값 받아와서 UI에 반영 ======
+    IEnumerator FetchActuatorsOnce()
+    {
+        yield return StartCoroutine(FetchLEDOnce());
+        yield return StartCoroutine(FetchFanOnce());
+    }
+
+    IEnumerator AutoRefreshLoop()
+    {
+        while (true)
+        {
+            // 사용자가 드래그 중일 땐 LED는 덮어쓰지 않음
+            if (!isDragging) yield return StartCoroutine(FetchLEDOnce());
+            yield return StartCoroutine(FetchFanOnce());
+            yield return new WaitForSeconds(refreshInterval);
+        }
+    }
+
+    IEnumerator FetchLEDOnce()
+    {
+        yield return StartCoroutine(OneM2M.GetDataCoroutine(
+            origin: "CAdmin",
+            url: "TinyFarm/Actuator/LED/la",
+            callback: (res) =>
+            {
+                try
+                {
+                    var json = JObject.Parse(res);
+                    string raw = json["m2m:cin"]?["con"]?.ToString();
+                    if (!string.IsNullOrEmpty(raw))
+                    {
+                        int led = int.Parse(raw);
+                        // 이벤트(POST) 발생 막기: UI만 갱신
+                        LED_Slider.SetValueWithoutNotify(led);
+                        UpdateSliderText(led);
+                        UpdateBackgroundBrightness(led / 10f);
+                    }
+                }
+                catch
+                {
+                    // 무시하거나 로그
+                    Debug.LogWarning("FetchLEDOnce parse failed");
+                }
+            }
+        ));
+    }
+
+    IEnumerator FetchFanOnce()
+    {
+        yield return StartCoroutine(OneM2M.GetDataCoroutine(
+            origin: "CAdmin",
+            url: "TinyFarm/Actuator/Fan/la",
+            callback: (res) =>
+            {
+                try
+                {
+                    var json = JObject.Parse(res);
+                    string raw = json["m2m:cin"]?["con"]?.ToString();
+                    if (!string.IsNullOrEmpty(raw))
+                    {
+                        bool isOn = raw == "1" || raw.ToLower() == "true";
+                        // 이벤트(POST) 발생 막기: UI만 갱신
+                        fanToggle.SetIsOnWithoutNotify(isOn);
+                        ApplyFanInstant(isOn);
+                    }
+                }
+                catch
+                {
+                    Debug.LogWarning("FetchFanOnce parse failed");
+                }
+            }
+        ));
     }
 }
