@@ -3,6 +3,8 @@ using TMPro;
 using Newtonsoft.Json.Linq;
 using System.Collections;
 using IoT;
+using System.Diagnostics; // Stopwatch 사용
+using Debug = UnityEngine.Debug;
 
 public class SensorDisplay : MonoBehaviour
 {
@@ -23,13 +25,12 @@ public class SensorDisplay : MonoBehaviour
         while (true)
         {
             // Temperature
-            yield return StartCoroutine(OneM2M.GetDataCoroutine("CAdmin", "", "TinyFarm/Sensors/Temperature/la", (result) =>
+            yield return StartCoroutine(GetDataWithTiming("TinyFarm/Sensors/Temperature/la", (raw) =>
             {
                 try
                 {
-                    JObject json = JObject.Parse(result);
-                    string raw = json["m2m:cin"]["con"].ToString();
-                    float temp = float.Parse(raw);
+                    JObject json = JObject.Parse(raw);
+                    float temp = float.Parse(json["m2m:cin"]["con"].ToString());
                     tempText.text = $"Temperature: {temp:0.0} °C";
                 }
                 catch
@@ -39,13 +40,12 @@ public class SensorDisplay : MonoBehaviour
             }));
 
             // Humidity
-            yield return StartCoroutine(OneM2M.GetDataCoroutine("CAdmin", "", "TinyFarm/Sensors/Humid/la", (result) =>
+            yield return StartCoroutine(GetDataWithTiming("TinyFarm/Sensors/Humid/la", (raw) =>
             {
                 try
                 {
-                    JObject json = JObject.Parse(result);
-                    string raw = json["m2m:cin"]["con"].ToString();
-                    float humid = float.Parse(raw);
+                    JObject json = JObject.Parse(raw);
+                    float humid = float.Parse(json["m2m:cin"]["con"].ToString());
                     humidText.text = $"Humidity: {humid:0.0} %";
                 }
                 catch
@@ -55,13 +55,12 @@ public class SensorDisplay : MonoBehaviour
             }));
 
             // CO2
-            yield return StartCoroutine(OneM2M.GetDataCoroutine("CAdmin", "", "TinyFarm/Sensors/CO2/la", (result) =>
+            yield return StartCoroutine(GetDataWithTiming("TinyFarm/Sensors/CO2/la", (raw) =>
             {
                 try
                 {
-                    JObject json = JObject.Parse(result);
-                    string raw = json["m2m:cin"]["con"].ToString();
-                    float CO2 = float.Parse(raw);
+                    JObject json = JObject.Parse(raw);
+                    float CO2 = float.Parse(json["m2m:cin"]["con"].ToString());
                     CO2Text.text = $"CO2: {CO2:0.0} %";
                 }
                 catch
@@ -71,13 +70,12 @@ public class SensorDisplay : MonoBehaviour
             }));
 
             // Soil Moisture
-            yield return StartCoroutine(OneM2M.GetDataCoroutine("CAdmin", "", "TinyFarm/Sensors/Soil/la", (result) =>
+            yield return StartCoroutine(GetDataWithTiming("TinyFarm/Sensors/Soil/la", (raw) =>
             {
                 try
                 {
-                    JObject json = JObject.Parse(result);
-                    string raw = json["m2m:cin"]["con"].ToString();
-                    float Soil = float.Parse(raw);
+                    JObject json = JObject.Parse(raw);
+                    float Soil = float.Parse(json["m2m:cin"]["con"].ToString());
                     SoilText.text = $"Soil Moisture: {Soil:0.0} %";
                 }
                 catch
@@ -88,5 +86,18 @@ public class SensorDisplay : MonoBehaviour
 
             yield return new WaitForSeconds(refreshInterval);
         }
+    }
+
+    // 요청 ~ 응답 시간 측정 포함한 공용 메서드
+    private IEnumerator GetDataWithTiming(string url, System.Action<string> onSuccess)
+    {
+        Stopwatch sw = Stopwatch.StartNew();
+
+        yield return StartCoroutine(OneM2M.GetDataCoroutine("CAdmin", "", url, (result) =>
+        {
+            sw.Stop();
+            Debug.Log($"[Timing] {url} 응답 시간: {sw.ElapsedMilliseconds} ms");
+            onSuccess?.Invoke(result);
+        }));
     }
 }
