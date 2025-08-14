@@ -7,30 +7,32 @@ using System.Collections;
 
 public class ActuatorDisplay : MonoBehaviour
 {
-    [Header("LED Control")]
-    public Slider LED_Slider;
+    [Header("LED Control (Brightness Steps)")]
+    public Slider LED_Slider;                 // min=0, max=10, wholeNumbers=true 권장
     public TextMeshProUGUI LED_ValueText;
-    public Image backgroundPanel; // 전체 배경 어둡게
-    public Color baseColor = new Color(0, 0, 0, 0); // 검은색(알파 0)
+
+    [Header("Sun Light (Directional)")]
+    public Light sun;                         // 씬의 Directional Light
+    public bool autoAssignSun = true;         // 자동 할당 사용
 
     [Header("Fan Control")]
-    public Toggle fanToggle; // Toggle component
+    public Toggle fanToggle;
 
     [Header("Fan Toggle Visual")]
-    public Image fanBackground;          // 둥근 직사각형 바탕(UISprite/Sliced)
-    public RectTransform fanHandle;      // 흰색 원(Handle, Knob)
-    public Color fanOnColor  = new Color32(65,192,83,255);   // green
-    public Color fanOffColor = new Color32(150,150,150,255); // grey
-    public float fanPadding = 2f;        // 좌우 여백
-    public float fanAnimTime = 0.15f;    // 슬라이드 시간(초)
+    public Image fanBackground;
+    public RectTransform fanHandle;
+    public Color fanOnColor  = new Color32(65,192,83,255);
+    public Color fanOffColor = new Color32(150,150,150,255);
+    public float fanPadding = 2f;
+    public float fanAnimTime = 0.15f;
 
     [Header("Fan Handle Fixed Positions")]
     public Vector2 fanOffAnchoredPos = new Vector2(10f, -10f);
     public Vector2 fanOnAnchoredPos  = new Vector2(30f, -10f);
 
     [Header("Fetch Settings")]
-    public bool fetchOnStart = true;     // 시작 시 1회 서버값 당겨오기
-    public bool autoRefresh  = false;    // 주기적으로 최신값 동기화
+    public bool fetchOnStart = true;
+    public bool autoRefresh  = false;
     public float refreshInterval = 5f;
 
     private bool isDragging = false;
@@ -39,29 +41,54 @@ public class ActuatorDisplay : MonoBehaviour
     Vector2 fanOnPos, fanOffPos;
     Coroutine fanAnimCo;
 
+    void Awake()
+    {
+        // Directional Light 자동 할당
+        if (autoAssignSun && !sun)
+        {
+            if (RenderSettings.sun) sun = RenderSettings.sun;
+            if (!sun)
+            {
+                var lights = FindObjectsOfType<Light>();
+                foreach (var l in lights)
+                {
+                    if (l && l.type == LightType.Directional) { sun = l; break; }
+                }
+            }
+        }
+    }
+
     void Start()
     {
-        // LED 초기화
-        UpdateSliderText(LED_Slider.value);
-        LED_Slider.onValueChanged.AddListener(OnSliderValueChanged);
+        // LED 슬라이더 기본 설정(권장값)
+        if (LED_Slider)
+        {
+            LED_Slider.wholeNumbers = true;
+            if (LED_Slider.minValue != 0f)  LED_Slider.minValue = 0f;
+            if (LED_Slider.maxValue != 10f) LED_Slider.maxValue = 10f;
+
+            UpdateSliderText(LED_Slider.value);
+            LED_Slider.onValueChanged.AddListener(OnSliderValueChanged);
+
+            // 시작 시 슬라이더 값으로 태양 밝기 반영
+            ApplySunIntensityStep(Mathf.RoundToInt(LED_Slider.value));
+        }
 
         // Fan 초기화
         if (fanToggle != null)
         {
             fanToggle.onValueChanged.AddListener(OnFanToggleChanged);
             CacheFanPositions();
-            ApplyFanInstant(fanToggle.isOn); // 시작 상태 반영
+            ApplyFanInstant(fanToggle.isOn);
         }
 
-        // 서버 최신값 → UI에 1회 반영
         if (fetchOnStart) StartCoroutine(FetchActuatorsOnce());
-        // 센서처럼 주기 갱신 원하면 켜기
         if (autoRefresh)  StartCoroutine(AutoRefreshLoop());
     }
 
     void Update()
     {
-        // LED 값 서버 전송 (마우스 드래그 끝났을 때 딱 한 번)
+        // LED 값 서버 전송 (드래그 종료 시 1회)
         if (isDragging && Input.GetMouseButtonUp(0))
         {
             isDragging = false;
@@ -70,28 +97,25 @@ public class ActuatorDisplay : MonoBehaviour
         }
     }
 
-    // ===== LED =====
+    // ===== LED → Sun Intensity (0~10 step → 0.0~1.0) =====
     void OnSliderValueChanged(float value)
     {
-        UpdateSliderText(value);
-        UpdateBackgroundBrightness(value / 10f); // 0~10 → 0~1
+        int step = Mathf.RoundToInt(value);
+        UpdateSliderText(step);
+        ApplySunIntensityStep(step);
         isDragging = true;
     }
 
-    void UpdateSliderText(float value)
+    void UpdateSliderText(float valueOrStep)
     {
-        LED_ValueText.text = Mathf.RoundToInt(value).ToString();
+        LED_ValueText.text = Mathf.RoundToInt(valueOrStep).ToString();
     }
 
-    void UpdateBackgroundBrightness(float brightness)
+    void ApplySunIntensityStep(int step)
     {
-        if (backgroundPanel != null)
-        {
-            Color newColor = baseColor;
-            float alpha = Mathf.Lerp(200f / 255f, 0f, brightness);
-            newColor.a = alpha;
-            backgroundPanel.color = newColor;
-        }
+        if (!sun) return;
+        step = Mathf.Clamp(step, 0, 10);
+        sun.intensity = step * 0.1f; // 0, 0.1, ..., 1.0
     }
 
     IEnumerator SendLEDValueToServer(int ledValue)
@@ -100,7 +124,7 @@ public class ActuatorDisplay : MonoBehaviour
         {
             ["m2m:cin"] = new JObject
             {
-                ["con"] = ledValue.ToString()
+                ["con"] = ledValue.ToString()   // 0~10 단계값 서버로 전송
             }
         }.ToString();
 
@@ -115,9 +139,7 @@ public class ActuatorDisplay : MonoBehaviour
     // ===== Fan =====
     void OnFanToggleChanged(bool isOn)
     {
-        // 1) 비주얼 애니메이션
         StartFanAnimate(isOn);
-        // 2) 서버 전송
         StartCoroutine(SendFanStateToServer(isOn));
     }
 
@@ -179,7 +201,6 @@ public class ActuatorDisplay : MonoBehaviour
         ApplyFanInstant(isOn);
     }
 
-    // 캔버스 리사이징/해상도 변경 시 위치 재계산
     void OnRectTransformDimensionsChange()
     {
         CacheFanPositions();
@@ -197,7 +218,6 @@ public class ActuatorDisplay : MonoBehaviour
     {
         while (true)
         {
-            // 사용자가 드래그 중일 땐 LED는 덮어쓰지 않음
             if (!isDragging) yield return StartCoroutine(FetchLEDOnce());
             yield return StartCoroutine(FetchFanOnce());
             yield return new WaitForSeconds(refreshInterval);
@@ -217,18 +237,13 @@ public class ActuatorDisplay : MonoBehaviour
                     string raw = json["m2m:cin"]?["con"]?.ToString();
                     if (!string.IsNullOrEmpty(raw))
                     {
-                        int led = int.Parse(raw);
-                        // 이벤트(POST) 발생 막기: UI만 갱신
-                        LED_Slider.SetValueWithoutNotify(led);
-                        UpdateSliderText(led);
-                        UpdateBackgroundBrightness(led / 10f);
+                        int step = Mathf.Clamp(int.Parse(raw), 0, 10);
+                        LED_Slider.SetValueWithoutNotify(step); // 이벤트 막고 UI만
+                        UpdateSliderText(step);
+                        ApplySunIntensityStep(step);
                     }
                 }
-                catch
-                {
-                    // 무시하거나 로그
-                    Debug.LogWarning("FetchLEDOnce parse failed");
-                }
+                catch { Debug.LogWarning("FetchLEDOnce parse failed"); }
             }
         ));
     }
@@ -247,15 +262,11 @@ public class ActuatorDisplay : MonoBehaviour
                     if (!string.IsNullOrEmpty(raw))
                     {
                         bool isOn = raw == "1" || raw.ToLower() == "true";
-                        // 이벤트(POST) 발생 막기: UI만 갱신
                         fanToggle.SetIsOnWithoutNotify(isOn);
                         ApplyFanInstant(isOn);
                     }
                 }
-                catch
-                {
-                    Debug.LogWarning("FetchFanOnce parse failed");
-                }
+                catch { Debug.LogWarning("FetchFanOnce parse failed"); }
             }
         ));
     }
