@@ -7,7 +7,11 @@ public class UIManager : MonoBehaviour
     public GameObject Sensors_panel;
     public GameObject Actuators_panel;
 
-    [Header("Camera Rig (optional)")]
+    [Header("Config")]
+    public GameObject ConfigModal;
+    public ConfigPanel configPanel;
+
+    [Header("Camera Rig")]
     public CameraRigController camRig;   // 없으면 이동 스킵
 
     string _current = ""; // "Sensors" / "Actuators" / ""(모두 닫힘)
@@ -19,11 +23,21 @@ public class UIManager : MonoBehaviour
     public void ClickActuators() => TogglePanel("Actuators");
 
     // === Helpers ===
-    
+
     void TogglePanel(string name)
     {
         _current = (_current == name) ? "" : name;
         if (Sensors_panel) Sensors_panel.SetActive(_current == "Sensors");
         if (Actuators_panel) Actuators_panel.SetActive(_current == "Actuators");
+    }
+
+    public void OpenConfig()
+    {
+        if (ConfigModal) ConfigModal.SetActive(true);
+        configPanel?.LoadFromComponents();
+    }
+    public void CloseConfig()
+    {
+        if (ConfigModal) ConfigModal.SetActive(false);
     }
 }
