@@ -40,6 +40,7 @@ public class ActuatorDisplay : MonoBehaviour
     // Fan 토글 애니메이션용 내부 상태
     Vector2 fanOnPos, fanOffPos;
     Coroutine fanAnimCo;
+    Coroutine autoCo;
 
     void Awake()
     {
@@ -54,6 +55,20 @@ public class ActuatorDisplay : MonoBehaviour
                 {
                     if (l && l.type == LightType.Directional) { sun = l; break; }
                 }
+            }
+        }
+    }
+
+    public void TryAutoAssignSun()
+    {
+        if (autoAssignSun && !sun)
+        {
+            if (RenderSettings.sun) sun = RenderSettings.sun;
+            if (!sun)
+            {
+                var lights = FindObjectsOfType<Light>();
+                foreach (var l in lights)
+                    if (l && l.type == LightType.Directional) { sun = l; break; }
             }
         }
     }
@@ -83,7 +98,7 @@ public class ActuatorDisplay : MonoBehaviour
         }
 
         if (fetchOnStart) StartCoroutine(FetchActuatorsOnce());
-        if (autoRefresh)  StartCoroutine(AutoRefreshLoop());
+        if (autoRefresh) autoCo = StartCoroutine(AutoRefreshLoop());
     }
 
     void Update()
@@ -216,12 +231,13 @@ public class ActuatorDisplay : MonoBehaviour
 
     IEnumerator AutoRefreshLoop()
     {
-        while (true)
+        while (autoRefresh)
         {
             if (!isDragging) yield return StartCoroutine(FetchLEDOnce());
             yield return StartCoroutine(FetchFanOnce());
             yield return new WaitForSeconds(refreshInterval);
         }
+        autoCo = null;
     }
 
     IEnumerator FetchLEDOnce()
@@ -269,5 +285,23 @@ public class ActuatorDisplay : MonoBehaviour
                 catch { Debug.LogWarning("FetchFanOnce parse failed"); }
             }
         ));
+    }
+
+    public void ApplyFetchSettings(bool newFetchOnStart, bool newAutoRefresh, float newInterval)
+    {
+        fetchOnStart    = newFetchOnStart;
+        refreshInterval = Mathf.Max(0.1f, newInterval);
+
+        if (autoRefresh != newAutoRefresh)
+        {
+            autoRefresh = newAutoRefresh;
+            if (autoCo != null) { StopCoroutine(autoCo); autoCo = null; }
+            if (autoRefresh) autoCo = StartCoroutine(AutoRefreshLoop());
+        }
+        else
+        {
+            // 주기만 바뀐 경우: 다음 사이클부터 자연히 반영됨
+            // (별도 처리 불필요)
+        }
     }
 }
