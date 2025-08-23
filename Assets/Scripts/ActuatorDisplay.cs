@@ -7,103 +7,97 @@ using System.Collections;
 
 public class ActuatorDisplay : MonoBehaviour
 {
+    // ===== LED =====
     [Header("LED Control (Brightness Steps)")]
-    public Slider LED_Slider;                 // min=0, max=10, wholeNumbers=true 권장
+    public Slider LED_Slider;                 
     public TextMeshProUGUI LED_ValueText;
 
     [Header("Sun Light (Directional)")]
-    public Light sun;                         // 씬의 Directional Light
-    public bool autoAssignSun = true;         // 자동 할당 사용
+    public Light sun;                         
+    public bool autoAssignSun = true;         
 
+    // ===== FAN =====
     [Header("Fan Control")]
     public Toggle fanToggle;
-
     [Header("Fan Toggle Visual")]
     public Image fanBackground;
     public RectTransform fanHandle;
     public Color fanOnColor  = new Color32(65,192,83,255);
     public Color fanOffColor = new Color32(150,150,150,255);
-    public float fanPadding = 2f;
     public float fanAnimTime = 0.15f;
-
-    [Header("Fan Handle Fixed Positions")]
     public Vector2 fanOffAnchoredPos = new Vector2(10f, -10f);
     public Vector2 fanOnAnchoredPos  = new Vector2(30f, -10f);
 
+    // ===== WATER =====
+    [Header("Watering Control")]
+    public Toggle waterToggle;
+    [Header("Water Toggle Visual")]
+    public Image waterBackground;
+    public RectTransform waterHandle;
+    public Color waterOnColor  = new Color32(65,192,83,255);
+    public Color waterOffColor = new Color32(150,150,150,255);
+    public float waterAnimTime = 0.15f;
+    public Vector2 waterOffAnchoredPos = new Vector2(10f, -10f);
+    public Vector2 waterOnAnchoredPos  = new Vector2(30f, -10f);
+
+    [Header("Water FX (optional)")]
+    public WaterSprinklerPS waterFX; // 있으면 파티클 동기화
+
+    // ===== Fetch 공통 =====
     [Header("Fetch Settings")]
     public bool fetchOnStart = true;
     public bool autoRefresh  = false;
     public float refreshInterval = 5f;
 
-    private bool isDragging = false;
-
-    // Fan 토글 애니메이션용 내부 상태
-    Vector2 fanOnPos, fanOffPos;
-    Coroutine fanAnimCo;
-    Coroutine autoCo;
+    bool isDragging = false;
+    Vector2 fanOnPos, fanOffPos, waterOnPos, waterOffPos;
+    Coroutine fanAnimCo, waterAnimCo, autoCo;
 
     void Awake()
     {
-        // Directional Light 자동 할당
         if (autoAssignSun && !sun)
         {
             if (RenderSettings.sun) sun = RenderSettings.sun;
             if (!sun)
-            {
-                var lights = FindObjectsOfType<Light>();
-                foreach (var l in lights)
-                {
+                foreach (var l in FindObjectsOfType<Light>())
                     if (l && l.type == LightType.Directional) { sun = l; break; }
-                }
-            }
-        }
-    }
-
-    public void TryAutoAssignSun()
-    {
-        if (autoAssignSun && !sun)
-        {
-            if (RenderSettings.sun) sun = RenderSettings.sun;
-            if (!sun)
-            {
-                var lights = FindObjectsOfType<Light>();
-                foreach (var l in lights)
-                    if (l && l.type == LightType.Directional) { sun = l; break; }
-            }
         }
     }
 
     void Start()
     {
-        // LED 슬라이더 기본 설정(권장값)
+        // LED
         if (LED_Slider)
         {
             LED_Slider.wholeNumbers = true;
-            if (LED_Slider.minValue != 0f)  LED_Slider.minValue = 0f;
-            if (LED_Slider.maxValue != 10f) LED_Slider.maxValue = 10f;
-
+            LED_Slider.minValue = 0f; LED_Slider.maxValue = 10f;
             UpdateSliderText(LED_Slider.value);
             LED_Slider.onValueChanged.AddListener(OnSliderValueChanged);
-
-            // 시작 시 슬라이더 값으로 태양 밝기 반영
             ApplySunIntensityStep(Mathf.RoundToInt(LED_Slider.value));
         }
 
-        // Fan 초기화
-        if (fanToggle != null)
+        // Fan
+        if (fanToggle)
         {
             fanToggle.onValueChanged.AddListener(OnFanToggleChanged);
-            CacheFanPositions();
+            fanOffPos = fanOffAnchoredPos; fanOnPos = fanOnAnchoredPos;
             ApplyFanInstant(fanToggle.isOn);
         }
 
+        // Water
+        if (waterToggle)
+        {
+            waterToggle.onValueChanged.AddListener(OnWaterToggleChanged);
+            waterOffPos = waterOffAnchoredPos; waterOnPos = waterOnAnchoredPos;
+            ApplyWaterInstant(waterToggle.isOn);
+        }
+
         if (fetchOnStart) StartCoroutine(FetchActuatorsOnce());
-        if (autoRefresh) autoCo = StartCoroutine(AutoRefreshLoop());
+        if (autoRefresh)  autoCo = StartCoroutine(AutoRefreshLoop());
     }
 
     void Update()
     {
-        // LED 값 서버 전송 (드래그 종료 시 1회)
         if (isDragging && Input.GetMouseButtonUp(0))
         {
             isDragging = false;
@@ -112,7 +106,7 @@ public class ActuatorDisplay : MonoBehaviour
         }
     }
 
-    // ===== LED → Sun Intensity (0~10 step → 0.0~1.0) =====
+    // ===== LED =====
     void OnSliderValueChanged(float value)
     {
         int step = Mathf.RoundToInt(value);
@@ -120,29 +114,17 @@ public class ActuatorDisplay : MonoBehaviour
         ApplySunIntensityStep(step);
         isDragging = true;
     }
-
-    void UpdateSliderText(float valueOrStep)
-    {
-        LED_ValueText.text = Mathf.RoundToInt(valueOrStep).ToString();
-    }
-
+    void UpdateSliderText(float v) => LED_ValueText.text = Mathf.RoundToInt(v).ToString();
     void ApplySunIntensityStep(int step)
     {
         if (!sun) return;
-        step = Mathf.Clamp(step, 0, 10);
-        sun.intensity = step * 0.1f; // 0, 0.1, ..., 1.0
+        sun.intensity = Mathf.Clamp(step, 0, 10) * 0.1f;
     }
-
     IEnumerator SendLEDValueToServer(int ledValue)
     {
-        string jsonBody = new JObject
-        {
-            ["m2m:cin"] = new JObject
-            {
-                ["con"] = ledValue.ToString()   // 0~10 단계값 서버로 전송
-            }
-        }.ToString();
+        string jsonBody = new JObject { ["m2m:cin"] = new JObject { ["con"] = ledValue.ToString() } }.ToString();
 
+        // 원래 형식 (named args)
         yield return StartCoroutine(OneM2M.PostDataCoroutine(
             origin: "CAdmin",
             type: 4,
@@ -151,22 +133,15 @@ public class ActuatorDisplay : MonoBehaviour
         ));
     }
 
-    // ===== Fan =====
+    // ===== FAN =====
     void OnFanToggleChanged(bool isOn)
     {
         StartFanAnimate(isOn);
         StartCoroutine(SendFanStateToServer(isOn));
     }
-
     IEnumerator SendFanStateToServer(bool isOn)
     {
-        string jsonBody = new JObject
-        {
-            ["m2m:cin"] = new JObject
-            {
-                ["con"] = isOn ? "1" : "0"
-            }
-        }.ToString();
+        string jsonBody = new JObject { ["m2m:cin"] = new JObject { ["con"] = isOn ? "1" : "0" } }.ToString();
 
         yield return StartCoroutine(OneM2M.PostDataCoroutine(
             origin: "CAdmin",
@@ -175,66 +150,93 @@ public class ActuatorDisplay : MonoBehaviour
             url: "TinyFarm/Actuator/Fan"
         ));
     }
-
-    // ===== Fan 토글 비주얼 로직 =====
-    void CacheFanPositions()
-    {
-        if (fanBackground == null || fanHandle == null) return;
-        fanOffPos = fanOffAnchoredPos;
-        fanOnPos  = fanOnAnchoredPos;
-    }
-
     void ApplyFanInstant(bool isOn)
     {
-        if (fanBackground == null || fanHandle == null) return;
+        if (!fanBackground || !fanHandle) return;
         fanBackground.color = isOn ? fanOnColor : fanOffColor;
         fanHandle.anchoredPosition = isOn ? fanOnPos : fanOffPos;
     }
-
     void StartFanAnimate(bool isOn)
     {
         if (fanAnimCo != null) StopCoroutine(fanAnimCo);
-        fanAnimCo = StartCoroutine(FanAnimate(isOn));
+        fanAnimCo = StartCoroutine(DoToggleAnimate(
+            fanBackground, fanHandle, isOn, fanOnColor, fanOffColor, fanOnPos, fanOffPos, fanAnimTime
+        ));
     }
 
-    IEnumerator FanAnimate(bool isOn)
+    // ===== WATER =====
+    void OnWaterToggleChanged(bool isOn)
     {
-        if (fanBackground == null || fanHandle == null) yield break;
+        StartWaterAnimate(isOn);
+        if (waterFX) waterFX.SetState(isOn); // 파티클
+        StartCoroutine(SendWaterStateToServer(isOn));
+    }
+    IEnumerator SendWaterStateToServer(bool isOn)
+    {
+        string jsonBody = new JObject { ["m2m:cin"] = new JObject { ["con"] = isOn ? "1" : "0" } }.ToString();
 
+        // 원래 형식 (named args)
+        yield return StartCoroutine(OneM2M.PostDataCoroutine(
+            origin: "CAdmin",
+            type: 4,
+            body: jsonBody,
+            url: "TinyFarm/Actuator/Water"
+        ));
+    }
+    void ApplyWaterInstant(bool isOn)
+    {
+        if (!waterBackground || !waterHandle) return;
+        waterBackground.color = isOn ? waterOnColor : waterOffColor;
+        waterHandle.anchoredPosition = isOn ? waterOnPos : waterOffPos;
+    }
+    void StartWaterAnimate(bool isOn)
+    {
+        if (waterAnimCo != null) StopCoroutine(waterAnimCo);
+        waterAnimCo = StartCoroutine(DoToggleAnimate(
+            waterBackground, waterHandle, isOn, waterOnColor, waterOffColor, waterOnPos, waterOffPos, waterAnimTime
+        ));
+    }
+
+    // ===== 공통 토글 애니메이션 =====
+    IEnumerator DoToggleAnimate(Image bg, RectTransform knob, bool isOn,
+                                Color onColor, Color offColor,
+                                Vector2 onPos, Vector2 offPos, float secs)
+    {
+        if (!bg || !knob) yield break;
         float t = 0f;
-        Color c0 = fanBackground.color, c1 = isOn ? fanOnColor : fanOffColor;
-        Vector2 p0 = fanHandle.anchoredPosition, p1 = isOn ? fanOnPos : fanOffPos;
-
-        while (t < fanAnimTime)
+        Color c0 = bg.color, c1 = isOn ? onColor : offColor;
+        Vector2 p0 = knob.anchoredPosition, p1 = isOn ? onPos : offPos;
+        while (t < secs)
         {
             t += Time.unscaledDeltaTime;
-            float u = Mathf.Clamp01(t / fanAnimTime);
-            fanBackground.color = Color.Lerp(c0, c1, u);
-            fanHandle.anchoredPosition = Vector2.Lerp(p0, p1, u);
+            float u = Mathf.Clamp01(t / secs);
+            bg.color = Color.Lerp(c0, c1, u);
+            knob.anchoredPosition = Vector2.Lerp(p0, p1, u);
             yield return null;
         }
-        ApplyFanInstant(isOn);
+        bg.color = c1; knob.anchoredPosition = p1;
     }
 
     void OnRectTransformDimensionsChange()
     {
-        CacheFanPositions();
-        if (fanToggle != null) ApplyFanInstant(fanToggle.isOn);
+        if (fanToggle)   ApplyFanInstant(fanToggle.isOn);
+        if (waterToggle) ApplyWaterInstant(waterToggle.isOn);
     }
 
-    // ====== GET으로 최신값 받아와서 UI에 반영 ======
+    // ===== FETCH & AUTO REFRESH =====
     IEnumerator FetchActuatorsOnce()
     {
-        yield return StartCoroutine(FetchLEDOnce());
-        yield return StartCoroutine(FetchFanOnce());
+        yield return FetchLEDOnce();
+        yield return FetchFanOnce();
+        yield return FetchWaterOnce();
     }
-
     IEnumerator AutoRefreshLoop()
     {
         while (autoRefresh)
         {
-            if (!isDragging) yield return StartCoroutine(FetchLEDOnce());
-            yield return StartCoroutine(FetchFanOnce());
+            if (!isDragging) yield return FetchLEDOnce();
+            yield return FetchFanOnce();
+            yield return FetchWaterOnce();
             yield return new WaitForSeconds(refreshInterval);
         }
         autoCo = null;
@@ -247,19 +249,17 @@ public class ActuatorDisplay : MonoBehaviour
             url: "TinyFarm/Actuator/LED/la",
             callback: (res) =>
             {
-                try
-                {
+                try {
                     var json = JObject.Parse(res);
                     string raw = json["m2m:cin"]?["con"]?.ToString();
                     if (!string.IsNullOrEmpty(raw))
                     {
                         int step = Mathf.Clamp(int.Parse(raw), 0, 10);
-                        LED_Slider.SetValueWithoutNotify(step); // 이벤트 막고 UI만
+                        LED_Slider.SetValueWithoutNotify(step);
                         UpdateSliderText(step);
                         ApplySunIntensityStep(step);
                     }
-                }
-                catch { Debug.LogWarning("FetchLEDOnce parse failed"); }
+                } catch { Debug.LogWarning("FetchLEDOnce parse failed"); }
             }
         ));
     }
@@ -271,22 +271,40 @@ public class ActuatorDisplay : MonoBehaviour
             url: "TinyFarm/Actuator/Fan/la",
             callback: (res) =>
             {
-                try
-                {
+                try {
                     var json = JObject.Parse(res);
                     string raw = json["m2m:cin"]?["con"]?.ToString();
-                    if (!string.IsNullOrEmpty(raw))
-                    {
-                        bool isOn = raw == "1" || raw.ToLower() == "true";
-                        fanToggle.SetIsOnWithoutNotify(isOn);
-                        ApplyFanInstant(isOn);
-                    }
-                }
-                catch { Debug.LogWarning("FetchFanOnce parse failed"); }
+                    bool isOn = raw == "1" || raw?.ToLower() == "true";
+                    fanToggle.SetIsOnWithoutNotify(isOn);
+                    ApplyFanInstant(isOn);
+                } catch { Debug.LogWarning("FetchFanOnce parse failed"); }
             }
         ));
     }
 
+    IEnumerator FetchWaterOnce()
+    {
+        yield return StartCoroutine(OneM2M.GetDataCoroutine(
+            origin: "CAdmin",
+            url: "TinyFarm/Actuator/Water/la",
+            callback: (res) =>
+            {
+                try {
+                    var json = JObject.Parse(res);
+                    string raw = json["m2m:cin"]?["con"]?.ToString();
+                    bool isOn = raw == "1" || raw?.ToLower() == "true";
+                    if (waterToggle)
+                    {
+                        waterToggle.SetIsOnWithoutNotify(isOn);
+                        ApplyWaterInstant(isOn);
+                    }
+                    if (waterFX) waterFX.SetState(isOn);
+                } catch { Debug.LogWarning("FetchWaterOnce parse failed"); }
+            }
+        ));
+    }
+
+    // 런타임에 Fetch 설정 변경 (Config 패널에서 호출)
     public void ApplyFetchSettings(bool newFetchOnStart, bool newAutoRefresh, float newInterval)
     {
         fetchOnStart    = newFetchOnStart;
@@ -295,13 +313,12 @@ public class ActuatorDisplay : MonoBehaviour
         if (autoRefresh != newAutoRefresh)
         {
             autoRefresh = newAutoRefresh;
+
+            // 기존 루프 정지/재시작
             if (autoCo != null) { StopCoroutine(autoCo); autoCo = null; }
             if (autoRefresh) autoCo = StartCoroutine(AutoRefreshLoop());
         }
-        else
-        {
-            // 주기만 바뀐 경우: 다음 사이클부터 자연히 반영됨
-            // (별도 처리 불필요)
-        }
+        // autoRefresh가 동일하고 interval만 바뀐 경우는
+        // 다음 사이클부터 자연히 반영됩니다.
     }
 }

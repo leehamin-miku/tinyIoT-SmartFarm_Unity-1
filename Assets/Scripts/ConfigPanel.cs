@@ -6,18 +6,13 @@ using TMPro;
 public class ConfigPanel : MonoBehaviour
 {
     [Header("Targets")]
-    public SensorDisplay sensor;        // 센서 refreshInterval만 사용
-    public ActuatorDisplay actuator;    // autoAssignSun + Fetch Settings만 사용
+    public SensorDisplay sensor;        // refreshInterval & autoRefresh 적용
+    public ActuatorDisplay actuator;    // autoRefresh만 동기화(주기는 그대로)
     public UIManager ui;
 
-    [Header("Inputs - Sensor")]
-    public TMP_InputField Inp_SensorInterval;
-
-    [Header("Inputs - Actuator")]
-    public Toggle Tgl_AutoAssignSun;
-    public Toggle Tgl_FetchOnStart;
-    public Toggle Tgl_AutoRefresh;
-    public TMP_InputField Inp_ActInterval;
+    [Header("Inputs")]
+    public TMP_InputField Inp_SensorInterval; // seconds
+    public Toggle Tgl_AutoRefresh;            // global toggle (sensor + actuator)
 
     void OnEnable() => LoadFromComponents();
 
@@ -27,60 +22,44 @@ public class ConfigPanel : MonoBehaviour
         if (sensor && Inp_SensorInterval)
             Inp_SensorInterval.text = sensor.refreshInterval.ToString("0.##");
 
-        if (actuator)
+        // 토글은 센서를 기준으로 보여주되, 센서가 없으면 액추에이터 값을 사용
+        if (Tgl_AutoRefresh)
         {
-            if (Tgl_AutoAssignSun) Tgl_AutoAssignSun.isOn = actuator.autoAssignSun;
-            if (Tgl_FetchOnStart)  Tgl_FetchOnStart.isOn  = actuator.fetchOnStart;
-            if (Tgl_AutoRefresh)   Tgl_AutoRefresh.isOn   = actuator.autoRefresh;
-            if (Inp_ActInterval)   Inp_ActInterval.text   = actuator.refreshInterval.ToString("0.##");
+            if (sensor) Tgl_AutoRefresh.isOn = sensor.autoRefresh;
+            else if (actuator) Tgl_AutoRefresh.isOn = actuator.autoRefresh;
+            else Tgl_AutoRefresh.isOn = false;
         }
     }
 
     // Apply & Close 버튼
     public void ApplyAndClose()
     {
-        // Sensor: refreshInterval만
-        if (sensor && Inp_SensorInterval && float.TryParse(Inp_SensorInterval.text, out var sInt))
-            sensor.refreshInterval = Mathf.Max(0.1f, sInt);
+        // 1) Interval: 센서만 적용 (UI 라벨이 Sensor Refresh Interval 이므로)
+        float sInt = sensor ? sensor.refreshInterval : 5f;
+        if (sensor && Inp_SensorInterval && float.TryParse(Inp_SensorInterval.text, out var parsed))
+            sInt = Mathf.Max(0.1f, parsed);
 
-        // Actuator: autoAssignSun + Fetch Settings만
+        // 2) AutoRefresh: 센서/액추에이터 둘 다 동일하게 적용
+        bool auto = Tgl_AutoRefresh ? Tgl_AutoRefresh.isOn : false;
+
+        // --- 센서 반영 ---
+        if (sensor)
+        {
+            // fetchOnStart 기존 값 보존, 주기/자동갱신만 반영
+            sensor.ApplyFetchSettings(sensor.fetchOnStart, auto, sInt);
+        }
+
+        // --- 액추에이터 반영 ---
         if (actuator)
         {
-            // autoAssignSun
-            if (Tgl_AutoAssignSun)
-            {
-                bool wantAuto = Tgl_AutoAssignSun.isOn;
-
-                // 처음 ON으로 바뀌었고 sun이 비어있으면 즉시 한번 할당 시도
-                if (wantAuto && !actuator.autoAssignSun && actuator.sun == null)
-                {
-                    if (RenderSettings.sun) actuator.sun = RenderSettings.sun;
-                    if (actuator.sun == null)
-                    {
-                        var lights = FindObjectsOfType<Light>();
-                        foreach (var l in lights)
-                        {
-                            if (l && l.type == LightType.Directional) { actuator.sun = l; break; }
-                        }
-                    }
-                }
-                actuator.autoAssignSun = wantAuto;
-            }
-
-            // Fetch Settings: fetchOnStart / autoRefresh / refreshInterval
-            if (Tgl_FetchOnStart) actuator.fetchOnStart = Tgl_FetchOnStart.isOn;
-            if (Tgl_AutoRefresh)  actuator.autoRefresh  = Tgl_AutoRefresh.isOn;
-            if (Inp_ActInterval && float.TryParse(Inp_ActInterval.text, out var aInt))
-                actuator.refreshInterval = Mathf.Max(0.1f, aInt);
-
-            // (필요 시) 간단 저장
-            PlayerPrefs.SetFloat("sensor.interval", sensor ? sensor.refreshInterval : 5f);
-            PlayerPrefs.SetInt("act.autoassign", actuator.autoAssignSun ? 1 : 0);
-            PlayerPrefs.SetInt("act.fetchOnStart", actuator.fetchOnStart ? 1 : 0);
-            PlayerPrefs.SetInt("act.autoRefresh", actuator.autoRefresh ? 1 : 0);
-            PlayerPrefs.SetFloat("act.interval", actuator.refreshInterval);
-            PlayerPrefs.Save();
+            // 액추에이터는 주기 입력 칸이 없으므로 기존 주기 유지
+            actuator.ApplyFetchSettings(actuator.fetchOnStart, auto, actuator.refreshInterval);
         }
+
+        // (선택) 간단 저장
+        PlayerPrefs.SetFloat("sensor.interval", sInt);
+        PlayerPrefs.SetInt("global.autoRefresh", auto ? 1 : 0);
+        PlayerPrefs.Save();
 
         ui?.CloseConfig();
     }
@@ -90,29 +69,15 @@ public class ConfigPanel : MonoBehaviour
     // (선택) 시작 시 저장된 값 적용하고 싶을 때 호출
     public void ApplySavedAtBoot()
     {
-        if (sensor && PlayerPrefs.HasKey("sensor.interval"))
-            sensor.refreshInterval = PlayerPrefs.GetFloat("sensor.interval");
+        float savedInterval = PlayerPrefs.GetFloat("sensor.interval",
+            sensor ? sensor.refreshInterval : 5f);
+        bool savedAuto = PlayerPrefs.GetInt("global.autoRefresh",
+            (sensor && sensor.autoRefresh) || (actuator && actuator.autoRefresh) ? 1 : 0) == 1;
+
+        if (sensor)
+            sensor.ApplyFetchSettings(sensor.fetchOnStart, savedAuto, savedInterval);
 
         if (actuator)
-        {
-            actuator.autoAssignSun = PlayerPrefs.GetInt("act.autoassign", actuator.autoAssignSun ? 1 : 0) == 1;
-            actuator.fetchOnStart  = PlayerPrefs.GetInt("act.fetchOnStart", actuator.fetchOnStart ? 1 : 0) == 1;
-            actuator.autoRefresh   = PlayerPrefs.GetInt("act.autoRefresh",  actuator.autoRefresh ? 1 : 0) == 1;
-            actuator.refreshInterval = PlayerPrefs.GetFloat("act.interval", actuator.refreshInterval);
-
-            // autoAssignSun이 켜져 있고 아직 sun이 없으면 한 번 더 할당 시도
-            if (actuator.autoAssignSun && actuator.sun == null)
-            {
-                if (RenderSettings.sun) actuator.sun = RenderSettings.sun;
-                if (actuator.sun == null)
-                {
-                    var lights = FindObjectsOfType<Light>();
-                    foreach (var l in lights)
-                    {
-                        if (l && l.type == LightType.Directional) { actuator.sun = l; break; }
-                    }
-                }
-            }
-        }
+            actuator.ApplyFetchSettings(actuator.fetchOnStart, savedAuto, actuator.refreshInterval);
     }
 }
