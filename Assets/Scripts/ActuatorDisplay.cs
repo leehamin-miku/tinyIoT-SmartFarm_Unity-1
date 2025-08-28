@@ -1,9 +1,10 @@
+using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 using IoT;
 using Newtonsoft.Json.Linq;
-using System.Collections;
 
 public class ActuatorDisplay : MonoBehaviour
 {
@@ -19,6 +20,8 @@ public class ActuatorDisplay : MonoBehaviour
     // ===== FAN =====
     [Header("Fan Control")]
     public Toggle fanToggle;
+    [Header("Fan Visual (Spinner)")]
+    public FanSpinner[] fanSpinners;
     [Header("Fan Toggle Visual")]
     public Image fanBackground;
     public RectTransform fanHandle;
@@ -106,6 +109,17 @@ public class ActuatorDisplay : MonoBehaviour
         }
     }
 
+    // === 공용 헬퍼 추가 ===
+    static bool ParseOnOff(string raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return false;
+        raw = raw.Trim();
+        return raw.Equals("ON", System.StringComparison.OrdinalIgnoreCase)
+            || raw.Equals("1")
+            || raw.Equals("true", System.StringComparison.OrdinalIgnoreCase);
+    }
+    static string ToOnOff(bool isOn) => isOn ? "ON" : "OFF";
+
     // ===== LED =====
     void OnSliderValueChanged(float value)
     {
@@ -129,7 +143,7 @@ public class ActuatorDisplay : MonoBehaviour
             origin: "CAdmin",
             type: 4,
             body: jsonBody,
-            url: "TinyFarm/Actuator/LED"
+            url: "TinyFarm/Actuators/LED"
         ));
     }
 
@@ -138,16 +152,20 @@ public class ActuatorDisplay : MonoBehaviour
     {
         StartFanAnimate(isOn);
         StartCoroutine(SendFanStateToServer(isOn));
+        if (fanSpinners != null)
+            foreach (var sp in fanSpinners) if (sp) sp.SetOn(isOn);
     }
     IEnumerator SendFanStateToServer(bool isOn)
     {
-        string jsonBody = new JObject { ["m2m:cin"] = new JObject { ["con"] = isOn ? "1" : "0" } }.ToString();
+        string jsonBody = new JObject {
+            ["m2m:cin"] = new JObject { ["con"] = ToOnOff(isOn) }
+        }.ToString();
 
         yield return StartCoroutine(OneM2M.PostDataCoroutine(
             origin: "CAdmin",
             type: 4,
             body: jsonBody,
-            url: "TinyFarm/Actuator/Fan"
+            url: "TinyFarm/Actuators/Fan"
         ));
     }
     void ApplyFanInstant(bool isOn)
@@ -173,14 +191,15 @@ public class ActuatorDisplay : MonoBehaviour
     }
     IEnumerator SendWaterStateToServer(bool isOn)
     {
-        string jsonBody = new JObject { ["m2m:cin"] = new JObject { ["con"] = isOn ? "1" : "0" } }.ToString();
+        string jsonBody = new JObject {
+            ["m2m:cin"] = new JObject { ["con"] = ToOnOff(isOn) }
+        }.ToString();
 
-        // 원래 형식 (named args)
         yield return StartCoroutine(OneM2M.PostDataCoroutine(
             origin: "CAdmin",
             type: 4,
             body: jsonBody,
-            url: "TinyFarm/Actuator/Water"
+            url: "TinyFarm/Actuators/Water"
         ));
     }
     void ApplyWaterInstant(bool isOn)
@@ -246,7 +265,7 @@ public class ActuatorDisplay : MonoBehaviour
     {
         yield return StartCoroutine(OneM2M.GetDataCoroutine(
             origin: "CAdmin",
-            url: "TinyFarm/Actuator/LED/la",
+            url: "TinyFarm/Actuators/LED/la",
             callback: (res) =>
             {
                 try {
@@ -268,13 +287,13 @@ public class ActuatorDisplay : MonoBehaviour
     {
         yield return StartCoroutine(OneM2M.GetDataCoroutine(
             origin: "CAdmin",
-            url: "TinyFarm/Actuator/Fan/la",
+            url: "TinyFarm/Actuators/Fan/la",
             callback: (res) =>
             {
                 try {
                     var json = JObject.Parse(res);
                     string raw = json["m2m:cin"]?["con"]?.ToString();
-                    bool isOn = raw == "1" || raw?.ToLower() == "true";
+                    bool isOn = ParseOnOff(raw);
                     fanToggle.SetIsOnWithoutNotify(isOn);
                     ApplyFanInstant(isOn);
                 } catch { Debug.LogWarning("FetchFanOnce parse failed"); }
@@ -286,13 +305,13 @@ public class ActuatorDisplay : MonoBehaviour
     {
         yield return StartCoroutine(OneM2M.GetDataCoroutine(
             origin: "CAdmin",
-            url: "TinyFarm/Actuator/Water/la",
+            url: "TinyFarm/Actuators/Water/la",
             callback: (res) =>
             {
                 try {
                     var json = JObject.Parse(res);
                     string raw = json["m2m:cin"]?["con"]?.ToString();
-                    bool isOn = raw == "1" || raw?.ToLower() == "true";
+                    bool isOn = ParseOnOff(raw);
                     if (waterToggle)
                     {
                         waterToggle.SetIsOnWithoutNotify(isOn);
