@@ -11,8 +11,8 @@ namespace IoT
 {
     public class OneM2M : MonoBehaviour
     {
-        public static string baseUrl = "http://203.250.148.89:3000/TinyIoT";
-        //public static string baseUrl = "http://127.0.0.1:3000/TinyIoT";
+        //public static string baseUrl = "http://203.250.148.89:3000/TinyIoT";
+        public static string baseUrl = "http://127.0.0.1:3000/TinyIoT";
         public static bool checkCommand = false;
 
         private static bool ValidateServerCertificate(object sender, X509Certificate certificate, X509Chain chain, SslPolicyErrors sslPolicyErrors)
