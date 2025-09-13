@@ -6,6 +6,7 @@ using System;
 using System.Security.Cryptography.X509Certificates;
 using System.Net.Security;
 using System.Net;
+using Newtonsoft.Json.Linq;
 
 namespace IoT
 {
@@ -102,7 +103,44 @@ namespace IoT
                 callback?.Invoke(jsonResponse);
             }
         }
+
+        public static IEnumerator CreateSubscription(string origin, string targetUrl, string subName, string notiUri, Action<string> callback = null)
+        {
+            string endpoint = $"{baseUrl}/{targetUrl}";
+
+            var sub = new JObject {
+                ["m2m:sub"] = new JObject {
+                    ["rn"]  = subName,
+                    ["nu"]  = new JArray(notiUri),
+                    ["enc"] = new JObject { ["net"] = new JArray(3) }
+                }
+            };
+
+            byte[] bodyRaw = Encoding.UTF8.GetBytes(sub.ToString());
+
+            using (UnityWebRequest request = new UnityWebRequest(endpoint, "POST"))
+            {
+                request.uploadHandler = new UploadHandlerRaw(bodyRaw);
+                request.downloadHandler = new DownloadHandlerBuffer();
+                request.SetRequestHeader("Content-Type", "application/json;ty=23");
+                request.SetRequestHeader("X-M2M-Origin", origin);
+                request.SetRequestHeader("X-M2M-RI", new System.Random().Next().ToString());
+                request.SetRequestHeader("X-M2M-RVI", "3");
+
+                yield return request.SendWebRequest();
+
+                string res = request.downloadHandler.text;
+                if (request.result == UnityWebRequest.Result.Success)
+                    Debug.Log($"[SUB OK] {targetUrl}: {res}");
+                else
+                    Debug.LogError($"[SUB FAIL] {targetUrl}: {res}");
+
+                callback?.Invoke(res);
+            }
+        }
     }
+
+    
 
     public class BypassCertificateHandler : CertificateHandler
     {

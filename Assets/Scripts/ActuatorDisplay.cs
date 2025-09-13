@@ -110,7 +110,7 @@ public class ActuatorDisplay : MonoBehaviour
     }
 
     // === 공용 헬퍼 추가 ===
-    static bool ParseOnOff(string raw)
+    public static bool ParseOnOff(string raw)
     {
         if (string.IsNullOrEmpty(raw)) return false;
         raw = raw.Trim();
@@ -337,7 +337,5 @@ public class ActuatorDisplay : MonoBehaviour
             if (autoCo != null) { StopCoroutine(autoCo); autoCo = null; }
             if (autoRefresh) autoCo = StartCoroutine(AutoRefreshLoop());
         }
-        // autoRefresh가 동일하고 interval만 바뀐 경우는
-        // 다음 사이클부터 자연히 반영됩니다.
     }
 }

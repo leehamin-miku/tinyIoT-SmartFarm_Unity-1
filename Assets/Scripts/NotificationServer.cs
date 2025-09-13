@@ -5,62 +5,76 @@ using System.Text;
 using System.Threading;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using System.Collections.Concurrent;
 using IoT;
 
 public class NotificationServer : MonoBehaviour
 {
     private HttpListener listener;
     private Thread listenerThread;
-    public bool isRunning = false;
-    private string url;
+    public volatile bool isRunning = false;
     public static int port = 6000;
 
-    void OnDestroy()
-    {
-        StopServer();
-    }
+    public string notiUriOverride;
+
+    static readonly ConcurrentQueue<Action> mainThreadJobs = new ConcurrentQueue<Action>();
+
+    public static void EnqueueMain(Action job) => mainThreadJobs.Enqueue(job);
+
+    void Awake()   { Application.quitting += () => StopServer(); }
+    void OnEnable(){ if (!isRunning) StartServer(); }
+    void OnDisable(){ StopServer(); }
+    void OnDestroy(){ StopServer(); }
 
     private void Start()
     {
-        StartServer();
+        string notiUri = GetNotiUri();
+        Debug.Log($"[SUB] notiUri = {notiUri}");
+        StartCoroutine(OneM2M.CreateSubscription("CAdmin","TinyFarm/Actuators/LED", "LEDSub", notiUri));
+        StartCoroutine(OneM2M.CreateSubscription("CAdmin","TinyFarm/Actuators/Fan", "FanSub", notiUri));
+        StartCoroutine(OneM2M.CreateSubscription("CAdmin","TinyFarm/Actuators/Water", "WaterSub", notiUri));
+    }
+
+    void Update()
+    {
+        while (mainThreadJobs.TryDequeue(out var job))
+        {
+            try { job(); } catch (Exception e) { Debug.LogError(e); }
+        }
+    }
+
+    private string GetNotiUri()
+    {
+        if (!string.IsNullOrEmpty(notiUriOverride))
+            return notiUriOverride.TrimEnd('/') + "/notifi";
+        return $"http://{GetLocalIP()}:{port}/notifi";
     }
 
     public void StartServer()
     {
-        try
-        {            
-            listener = new HttpListener();
-            url = $"http://+:{port}/";
-            listener.Prefixes.Add(url);
-            isRunning = true;
-            listener.Start();            
-            listenerThread = new Thread(ListenerThread);
-            listenerThread.Start();
+        if (isRunning) return;
+        isRunning = true;
 
-            Debug.Log($"Server started on port {port}");
-        }
-        catch (Exception e)
-        {
-            Debug.LogError($"Failed to start server: {e.Message}");
-        }
+        listener = new HttpListener();
+        listener.Prefixes.Add($"http://+:{port}/");
+        listener.Start();
+
+        listenerThread = new Thread(ListenerThread) { IsBackground = true };
+        listenerThread.Start();
     }
 
     private void ListenerThread()
     {
         while (isRunning)
         {
-
             try
-            {                
-                var context = listener.GetContext();
+            {
+                var context = listener.GetContext();                // blocking
                 ThreadPool.QueueUserWorkItem(ProcessRequest, context);
             }
             catch (Exception e)
             {
-                if (isRunning)
-                {
-                    Debug.LogError($"Listener error: {e.Message}");
-                }
+                if (isRunning) Debug.LogError($"Listener error: {e.Message}");
             }
         }
     }
@@ -69,85 +83,99 @@ public class NotificationServer : MonoBehaviour
     {
         var context = (HttpListenerContext)state;
         try
-        {            
-            if (context.Request.HttpMethod == "POST" && context.Request.Url.PathAndQuery == "/notifi")
+        {
+            if (context.Request.HttpMethod=="POST" && context.Request.Url.AbsolutePath.TrimEnd('/')=="/notifi")
             {
-                // Read request body
-                string requestBody;
-                using (var reader = new System.IO.StreamReader(context.Request.InputStream, context.Request.ContentEncoding))
-                {
-                    requestBody = reader.ReadToEnd();
-                }
+                var enc = context.Request.ContentEncoding ?? Encoding.UTF8;
+                using var r = new System.IO.StreamReader(context.Request.InputStream, enc);
+                var body = r.ReadToEnd();
 
-                // Parse JSON
-                JObject notification = JsonConvert.DeserializeObject<JObject>(requestBody);
-                Debug.Log($"Notification received: {JsonConvert.SerializeObject(notification, Formatting.Indented)}");
+                JObject jo = null;
+                try { jo = JsonConvert.DeserializeObject<JObject>(body); } catch {}
 
-                // Check for verification request
-                bool isVerification = false;
-                if (notification["m2m:sgn"] != null)
-                {
-                    var sgn = notification["m2m:sgn"];
-                    if (sgn["vrq"] != null)
-                    {
-                        isVerification = sgn["vrq"].Value<bool>();
-                    }
-                }
+                bool vrq = jo?["m2m:sgn"]?["vrq"]?.Value<bool>() ?? false;
 
-                // Create response headers
-                context.Response.Headers.Add("X-M2M-RSC", "2000");
-                context.Response.Headers.Add("X-M2M-RI", context.Request.Headers["X-M2M-RI"]);
-                context.Response.Headers.Add("X-M2M-Origin", "mn-ae");
-                context.Response.Headers.Add("X-M2M-RVI", DateTime.UtcNow.ToString("yyyyMMddTHHmmss"));
-
-                // Send response
-                context.Response.StatusCode = 200;
+                // 응답
+                context.Response.Headers["X-M2M-RSC"]="2000";
+                context.Response.Headers["X-M2M-RI"]= context.Request.Headers["X-M2M-RI"] ?? Guid.NewGuid().ToString();
+                context.Response.Headers["X-M2M-Origin"]="mn-ae";
+                context.Response.Headers["X-M2M-RVI"]="3";
+                context.Response.StatusCode=200;
+                context.Response.ContentLength64=0;
                 context.Response.Close();
 
-                if (isVerification)
+                if (!vrq)
                 {
-                    Debug.Log("Verification request received");
+                    string con = jo?.SelectToken("m2m:sgn.nev.rep.m2m:cin.con")?.ToString();
+                    string sur = jo?["m2m:sgn.sur"]?.ToString();
+
+                    EnqueueMain(() =>
+                    {
+                        var ui = FindObjectOfType<ActuatorDisplay>();
+                        if (ui == null) return;
+
+                        if (sur.Contains("/LED") && int.TryParse(con, out int step))
+                        {
+                            ui.LED_Slider.SetValueWithoutNotify(Mathf.Clamp(step,0,10));
+                            ui.SendMessage("ApplySunIntensityStep", step, SendMessageOptions.DontRequireReceiver);
+                        }
+                        else if (sur.Contains("/Fan"))
+                        {
+                            bool on = ActuatorDisplay.ParseOnOff(con);
+                            ui.fanToggle.SetIsOnWithoutNotify(on);
+                            ui.SendMessage("ApplyFanInstant", on, SendMessageOptions.DontRequireReceiver);
+                        }
+                        else if (sur.Contains("/Water"))
+                        {
+                            bool on = ActuatorDisplay.ParseOnOff(con);
+                            ui.waterToggle.SetIsOnWithoutNotify(on);
+                            ui.SendMessage("ApplyWaterInstant", on, SendMessageOptions.DontRequireReceiver);
+                            if (ui.waterFX) ui.waterFX.SetState(on);
+                        }
+                    });
                 }
-                else
-                    OneM2M.checkCommand = true;
+
+                return;
             }
+
+            context.Response.StatusCode = 404;
+            context.Response.ContentLength64 = 0;
+            context.Response.Close();
         }
         catch (Exception ex)
         {
-            Debug.LogError($"Error processing request: {ex.Message}\nStackTrace: {ex.StackTrace}");
-            context.Response.StatusCode = 500;
-            context.Response.Close();
+            Debug.LogError(ex);
+            try { context.Response.StatusCode = 500; context.Response.ContentLength64 = 0; context.Response.Close(); } catch {}
         }
     }
 
     public void StopServer()
     {
+        if (!isRunning) return;
         isRunning = false;
-        if (listener != null)
-        {
-            listener.Stop();
-            listener.Close();
-        }
 
-        if (listenerThread != null)
-        {
-            listenerThread.Join();
-        }
+        try { listener?.Stop(); }  catch {}
+        try { listener?.Close(); } catch {}
 
-        Debug.Log("Server stopped");
+        if (listenerThread != null && listenerThread.IsAlive)
+        {
+            try { listenerThread.Join(1000); } catch {}
+            if (listenerThread.IsAlive) { try { listenerThread.Interrupt(); } catch {} }
+        }
+        listenerThread = null;
+        listener = null;
     }
 
-    public void SetPort(int newPort)
+    private string GetLocalIP()
     {
-        if (isRunning)
+        string localIP = "127.0.0.1";
+        try
         {
-            StopServer();
-            port = newPort;
-            StartServer();
-        }
-        else
-        {
-            port = newPort;
-        }
+            var host = Dns.GetHostEntry(Dns.GetHostName());
+            foreach (var ip in host.AddressList)
+                if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                    { localIP = ip.ToString(); break; }
+        } catch {}
+        return localIP;
     }
 }
