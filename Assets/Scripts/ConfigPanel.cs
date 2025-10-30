@@ -58,9 +58,9 @@ public class ConfigPanel : MonoBehaviour
         }
 
         // (선택) 간단 저장
-        PlayerPrefs.SetFloat("sensor.interval", sInt);
-        PlayerPrefs.SetInt("global.autoRefresh", auto ? 1 : 0);
-        PlayerPrefs.Save();
+        //PlayerPrefs.SetFloat("sensor.interval", sInt);
+        //PlayerPrefs.SetInt("global.autoRefresh", auto ? 1 : 0);
+        //PlayerPrefs.Save();
 
         ui?.CloseConfig();
     }
@@ -68,17 +68,17 @@ public class ConfigPanel : MonoBehaviour
     public void CloseOnly() => ui?.CloseConfig();
 
     // (선택) 시작 시 저장된 값 적용하고 싶을 때 호출
-    public void ApplySavedAtBoot()
+    public void Start()
     {
-        float savedInterval = PlayerPrefs.GetFloat("sensor.interval",
-            sensor ? sensor.refreshInterval : 5f);
-        bool savedAuto = PlayerPrefs.GetInt("global.autoRefresh",
-            (sensor && sensor.autoRefresh) || (actuator && actuator.autoRefresh) ? 1 : 0) == 1;
+        //float savedInterval = PlayerPrefs.GetFloat("sensor.interval",
+        //    sensor ? sensor.refreshInterval : 5f);
+        //bool savedAuto = PlayerPrefs.GetInt("global.autoRefresh",
+        //    (sensor && sensor.autoRefresh) || (actuator && actuator.autoRefresh) ? 1 : 0) == 1;
 
         if (sensor)
-            sensor.ApplyFetchSettings(sensor.fetchOnStart, savedAuto, savedInterval);
+            sensor.ApplyFetchSettings(sensor.fetchOnStart, sensor.autoRefresh, sensor.refreshInterval);
 
         if (actuator)
-            actuator.ApplyFetchSettings(actuator.fetchOnStart, savedAuto, actuator.refreshInterval);
+            actuator.ApplyFetchSettings(actuator.fetchOnStart, actuator.autoRefresh, actuator.refreshInterval);
     }
 }

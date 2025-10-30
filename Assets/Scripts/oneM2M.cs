@@ -7,14 +7,19 @@ using System.Security.Cryptography.X509Certificates;
 using System.Net.Security;
 using System.Net;
 using Newtonsoft.Json.Linq;
+using NativeWebSocket;
 
 namespace IoT
 {
     public class OneM2M : MonoBehaviour
     {
-        //public static string baseUrl = "http://203.250.148.89:3000/TinyIoT";
-        public static string baseUrl = "http://127.0.0.1:3000/TinyIoT";
+        //public static string baseUrl = "http://192.168.82.234:3000/TinyIoT";
+        public static string baseUrl = "http://203.250.148.89:3000/TinyIoT";
+        //public static string baseUrl = "http://127.0.0.1:3000/TinyIoT";
         public static bool checkCommand = false;
+
+
+        //파라미터
 
         private static bool ValidateServerCertificate(object sender, X509Certificate certificate, X509Chain chain, SslPolicyErrors sslPolicyErrors)
         {                 
@@ -71,7 +76,6 @@ namespace IoT
         public static IEnumerator GetDataCoroutine(string origin, string token = "", string url = "", Action<string> callback = null)
         {
             string endpoint = url == "" ? baseUrl : $"{baseUrl}/{url}";
-            Debug.Log(endpoint);
             System.Random rand = new System.Random();
 
             using (UnityWebRequest request = UnityWebRequest.Get(endpoint))
@@ -80,6 +84,7 @@ namespace IoT
                 request.SetRequestHeader("Accept", "application/json");
                 request.SetRequestHeader("X-M2M-Origin", origin);
                 request.SetRequestHeader("X-M2M-RI", rand.Next().ToString());
+                //request.SetRequestHeader("X-M2M-RI", "retrieve_cnt");
                 request.SetRequestHeader("X-M2M-RVI", "3");
 
                 if (!string.IsNullOrEmpty(token))
@@ -93,10 +98,11 @@ namespace IoT
 
                 if (request.result == UnityWebRequest.Result.Success)
                 {
-                    Debug.Log($"Server response: {jsonResponse}");
+                    Debug.Log($"Server response: {url + "\ncon:"+(string)JObject.Parse(jsonResponse)["m2m:cin"]["con"]}");
                 }
                 else
                 {
+                    Debug.LogError($"Server error: {endpoint}");
                     Debug.LogError($"Server error: {jsonResponse}");
                 }
 
@@ -104,17 +110,24 @@ namespace IoT
             }
         }
 
-        public static IEnumerator CreateSubscription(string origin, string targetUrl, string subName, string notiUri, Action<string> callback = null)
+        public static IEnumerator CreateSubscription(
+    string origin, string targetUrl, string subName, string notiUri, Action<string> callback = null)
         {
             string endpoint = $"{baseUrl}/{targetUrl}";
+            Debug.Log("구독 endpoint:" + endpoint);
 
-            var sub = new JObject {
-                ["m2m:sub"] = new JObject {
-                    ["rn"]  = subName,
-                    ["nu"]  = new JArray(notiUri),
-                    ["enc"] = new JObject { ["net"] = new JArray(3) }
+            var sub = new JObject
+            {
+                ["m2m:sub"] = new JObject
+                {
+                    ["rn"] = subName,
+                    ["nu"] = new JArray(notiUri),
+                    ["enc"] = new JObject { ["net"] = new JArray(3, 4) },
+                    ["exc"] = 10
                 }
             };
+
+            print(sub);
 
             byte[] bodyRaw = Encoding.UTF8.GetBytes(sub.ToString());
 
@@ -122,25 +135,39 @@ namespace IoT
             {
                 request.uploadHandler = new UploadHandlerRaw(bodyRaw);
                 request.downloadHandler = new DownloadHandlerBuffer();
+
+                request.SetRequestHeader("Accept", "application/json");
                 request.SetRequestHeader("Content-Type", "application/json;ty=23");
+                request.SetRequestHeader("X-M2M-RI", "create_sub");
                 request.SetRequestHeader("X-M2M-Origin", origin);
-                request.SetRequestHeader("X-M2M-RI", new System.Random().Next().ToString());
                 request.SetRequestHeader("X-M2M-RVI", "3");
 
                 yield return request.SendWebRequest();
 
                 string res = request.downloadHandler.text;
+                long statusCode = request.responseCode;
+
                 if (request.result == UnityWebRequest.Result.Success)
-                    Debug.Log($"[SUB OK] {targetUrl}: {res}");
+                {
+                    Debug.Log($"[SUB OK] {targetUrl}: {statusCode} {res}");
+                }
                 else
-                    Debug.LogError($"[SUB FAIL] {targetUrl}: {res}");
+                {
+                    // 실패 사유 출력
+                    Debug.LogError(
+                        $"[SUB FAIL] {targetUrl}\n" +
+                        $"- Status: {statusCode}\n" +
+                        $"- Error: {request.error}\n" +
+                        $"- Response: {res}"
+                    );
+                }
 
                 callback?.Invoke(res);
             }
         }
     }
 
-    
+
 
     public class BypassCertificateHandler : CertificateHandler
     {
@@ -148,5 +175,23 @@ namespace IoT
         {           
             return true;
         }
+    }
+
+    
+    public class OneM2MWebSocket
+    {
+        WebSocket connection;
+
+
+
+        void WebSocketConnection()
+        {
+            if(connection != null)
+            {
+
+            }
+        }
+
+
     }
 }

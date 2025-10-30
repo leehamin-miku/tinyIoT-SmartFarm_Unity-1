@@ -12,7 +12,7 @@ public class UIManager : MonoBehaviour
     // 좌상단 기준 여백과 패널 간 간격
     public float dockLeft = 10f;
     public float dockTop = 10f;
-    public float dockSpacing = 8f;
+    public float dockSpacing = 15f;
 
     [Header("Config")]
     public GameObject ConfigModal;

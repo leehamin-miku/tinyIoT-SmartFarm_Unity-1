@@ -1,12 +1,12 @@
-using UnityEngine;
+using IoT;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Text;
 using System.Threading;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
-using System.Collections.Concurrent;
-using IoT;
+using UnityEngine;
 
 public class NotificationServer : MonoBehaviour
 {
@@ -26,13 +26,35 @@ public class NotificationServer : MonoBehaviour
     void OnDisable(){ StopServer(); }
     void OnDestroy(){ StopServer(); }
 
+    public static void OpenPort(int port, string ruleName = "UnityPortRule")
+    {
+        string args = $"advfirewall firewall add rule name=\"{ruleName}\" dir=in action=allow protocol=TCP localport={port}";
+        System.Diagnostics.ProcessStartInfo psi = new System.Diagnostics.ProcessStartInfo("netsh", args);
+        psi.Verb = "runas"; // 관리자 권한 필요
+        psi.CreateNoWindow = true;
+        psi.UseShellExecute = true;
+
+        try
+        {
+            System.Diagnostics.Process.Start(psi);
+        }
+        catch (System.Exception ex)
+        {
+            UnityEngine.Debug.LogError("방화벽 설정 실패: " + ex.Message);
+        }
+    }
+
     private void Start()
     {
+
+        
+
+
         string notiUri = GetNotiUri();
-        Debug.Log($"[SUB] notiUri = {notiUri}");
-        StartCoroutine(OneM2M.CreateSubscription("CAdmin","TinyFarm/Actuators/LED", "LEDSub", notiUri));
-        StartCoroutine(OneM2M.CreateSubscription("CAdmin","TinyFarm/Actuators/Fan", "FanSub", notiUri));
-        StartCoroutine(OneM2M.CreateSubscription("CAdmin","TinyFarm/Actuators/Water", "WaterSub", notiUri));
+        print($"[SUB] notiUri = {notiUri}");
+        //StartCoroutine(OneM2M.CreateSubscription("CAdmin","TinyFarm/Actuators/LED", "LEDSub", notiUri));
+        //StartCoroutine(OneM2M.CreateSubscription("CAdmin","TinyFarm/Actuators/Fan", "FanSub", notiUri));
+        //StartCoroutine(OneM2M.CreateSubscription("CAdmin","TinyFarm/Actuators/Water", "WaterSub", notiUri));
     }
 
     void Update()
@@ -46,21 +68,35 @@ public class NotificationServer : MonoBehaviour
     private string GetNotiUri()
     {
         if (!string.IsNullOrEmpty(notiUriOverride))
-            return notiUriOverride.TrimEnd('/') + "/notifi";
-        return $"http://{GetLocalIP()}:{port}/notifi";
+            return notiUriOverride.TrimEnd('/');
+        return $"http://{GetLocalIP()}:{port}";
     }
 
     public void StartServer()
     {
+        OpenPort(port);
+
         if (isRunning) return;
         isRunning = true;
 
         listener = new HttpListener();
-        listener.Prefixes.Add($"http://+:{port}/");
+
+        //string ip = GetLocalIP();
+
+        listener = new HttpListener();
+        listener.Prefixes.Add($"http://0.0.0.0:{port}/"); // 모든 인터페이스에서 접근 가능
+        //listener.Prefixes.Add($"http://localhost:{port}/"); // 로컬 접근용
         listener.Start();
+        //listener.Prefixes.Add($"http://{ip}:{port}/");
+        //listener.Start();
 
         listenerThread = new Thread(ListenerThread) { IsBackground = true };
         listenerThread.Start();
+
+        if (listener != null && listener.IsListening)
+            Debug.Log("서버가 열려있습니다!");
+        else
+            Debug.Log("서버가 닫혀있거나 생성되지 않았습니다.");
     }
 
     private void ListenerThread()
@@ -81,10 +117,13 @@ public class NotificationServer : MonoBehaviour
 
     private void ProcessRequest(object state)
     {
+        print("응답들어옴");
+
+        //포스트이고 /notifi인 것들만 처리
         var context = (HttpListenerContext)state;
         try
         {
-            if (context.Request.HttpMethod=="POST" && context.Request.Url.AbsolutePath.TrimEnd('/')=="/notifi")
+            if (context.Request.HttpMethod=="POST")
             {
                 var enc = context.Request.ContentEncoding ?? Encoding.UTF8;
                 using var r = new System.IO.StreamReader(context.Request.InputStream, enc);
@@ -94,6 +133,9 @@ public class NotificationServer : MonoBehaviour
                 try { jo = JsonConvert.DeserializeObject<JObject>(body); } catch {}
 
                 bool vrq = jo?["m2m:sgn"]?["vrq"]?.Value<bool>() ?? false;
+
+
+                print(body);
 
                 // 응답
                 context.Response.Headers["X-M2M-RSC"]="2000";

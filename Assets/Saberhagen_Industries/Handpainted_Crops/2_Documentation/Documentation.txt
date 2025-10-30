@@ -1,0 +1,18 @@
+Documentation for Handpainted Crops
+
+The package contains six different crops with six growing stages each and are inteded for 
+some sort of growing overtime. The package contains only textures and models and basic shaders.
+
+To achieve realtime growing one coulds make a procedural scaling animation before swapping the mesh out
+and add a particle effect to cover up the sudden switch.
+
+For growing when the days transition a simple model swap works of course!
+
+For spawning the plots or crops in you can activate the "Fade" boolean parameter of the Basic Material and change the
+surface type to Transparent, then for spawning in start with a "Fade Amount" parameter of 1 and animate it down
+to 0!
+
+For making the plots wet you could activate the "HSL" boolean parameter of the Basic Material and animate the "Lightness"
+parameter down to 0.7!
+
+Have fun growing and harvesting!

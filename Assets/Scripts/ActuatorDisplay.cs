@@ -1,10 +1,12 @@
-using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
-using UnityEngine.UI;
-using TMPro;
 using IoT;
 using Newtonsoft.Json.Linq;
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using TMPro;
+using Unity.VisualScripting;
+using UnityEngine;
+using UnityEngine.UI;
 
 public class ActuatorDisplay : MonoBehaviour
 {
@@ -13,8 +15,8 @@ public class ActuatorDisplay : MonoBehaviour
     public Slider LED_Slider;                 
     public TextMeshProUGUI LED_ValueText;
 
-    [Header("Sun Light (Directional)")]
-    public Light sun;                         
+    [Header("lamp Light (spot)")]
+    public List<Light> lamps;                         
     public bool autoAssignSun = true;         
 
     // ===== FAN =====
@@ -56,16 +58,16 @@ public class ActuatorDisplay : MonoBehaviour
     Vector2 fanOnPos, fanOffPos, waterOnPos, waterOffPos;
     Coroutine fanAnimCo, waterAnimCo, autoCo;
 
-    void Awake()
-    {
-        if (autoAssignSun && !sun)
-        {
-            if (RenderSettings.sun) sun = RenderSettings.sun;
-            if (!sun)
-                foreach (var l in FindObjectsOfType<Light>())
-                    if (l && l.type == LightType.Directional) { sun = l; break; }
-        }
-    }
+    //void Awake()
+    //{
+    //    if (autoAssignSun)
+    //    {
+    //        if (RenderSettings.sun) sun = RenderSettings.sun;
+    //        if (!sun)
+    //            foreach (var l in FindObjectsOfType<Light>())
+    //                if (l && l.type == LightType.Directional) { sun = l; break; }
+    //    }
+    //}
 
     void Start()
     {
@@ -131,8 +133,12 @@ public class ActuatorDisplay : MonoBehaviour
     void UpdateSliderText(float v) => LED_ValueText.text = Mathf.RoundToInt(v).ToString();
     void ApplySunIntensityStep(int step)
     {
-        if (!sun) return;
-        sun.intensity = Mathf.Clamp(step, 0, 10) * 0.1f;
+        //if (!sun) return;
+        foreach(Light i in lamps)
+        {
+            i.intensity = Mathf.Clamp(step, 0, 10) * 0.1f;
+        }
+        
     }
     IEnumerator SendLEDValueToServer(int ledValue)
     {
@@ -185,6 +191,7 @@ public class ActuatorDisplay : MonoBehaviour
     // ===== WATER =====
     void OnWaterToggleChanged(bool isOn)
     {
+        Debug.Log("물틀기" + isOn);
         StartWaterAnimate(isOn);
         if (waterFX) waterFX.SetState(isOn); // 파티클
         StartCoroutine(SendWaterStateToServer(isOn));
@@ -269,8 +276,10 @@ public class ActuatorDisplay : MonoBehaviour
             callback: (res) =>
             {
                 try {
+                    
                     var json = JObject.Parse(res);
                     string raw = json["m2m:cin"]?["con"]?.ToString();
+                    print("LED갱신완료 값:" + raw);
                     if (!string.IsNullOrEmpty(raw))
                     {
                         int step = Mathf.Clamp(int.Parse(raw), 0, 10);
@@ -285,6 +294,7 @@ public class ActuatorDisplay : MonoBehaviour
 
     IEnumerator FetchFanOnce()
     {
+
         yield return StartCoroutine(OneM2M.GetDataCoroutine(
             origin: "CAdmin",
             url: "TinyFarm/Actuators/Fan/la",
@@ -299,6 +309,8 @@ public class ActuatorDisplay : MonoBehaviour
                 } catch { Debug.LogWarning("FetchFanOnce parse failed"); }
             }
         ));
+
+        
     }
 
     IEnumerator FetchWaterOnce()
