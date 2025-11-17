@@ -1,15 +1,16 @@
+using NativeWebSocket;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-
-using NativeWebSocket;
+using static UnityEngine.Rendering.DebugUI;
 
 
 public class WebSocketDemo : MonoBehaviour {
 
 	// Use this for initialization
-        WebSocket websocket;
+        static WebSocket websocket;
 
         // Start is called before the first frame update
         async void Start()
@@ -19,6 +20,7 @@ public class WebSocketDemo : MonoBehaviour {
             websocket.OnOpen += () =>
             {
                 Debug.Log("Connection open!");
+                
             };
 
             websocket.OnError += (e) =>
@@ -28,7 +30,7 @@ public class WebSocketDemo : MonoBehaviour {
 
             websocket.OnClose += (e) =>
             {
-                Debug.Log("Connection closed!");
+                Debug.Log("Connection closed!"+e);
             };
 
             websocket.OnMessage += (bytes) =>
@@ -43,6 +45,8 @@ public class WebSocketDemo : MonoBehaviour {
 
             // waiting for messages
             await websocket.Connect();
+        Debug.Log("Ä¿³ØÆ® ¿Ï");
+            
         }
 
         void Update()
@@ -50,18 +54,40 @@ public class WebSocketDemo : MonoBehaviour {
 #if !UNITY_WEBGL || UNITY_EDITOR
             websocket.DispatchMessageQueue();
 #endif
-        }
-
-        async void SendWebSocketMessage()
+        if (Input.GetKeyDown(KeyCode.Q))
         {
-            if (websocket.State == WebSocketState.Open)
-            {
-                //// Sending bytes
-                //await websocket.Send(new byte[] { 10, 20, 30 });
+            SendWebSocketMessage();
+            SendWebSocketMessage();
+            SendWebSocketMessage();
+            SendWebSocketMessage();
+        }
+    }
 
-                //// Sending plain text
-                //await websocket.SendText("plain text message");
-            }
+        static void SendWebSocketMessage()
+        {
+            
+            //// Sending bytes
+            //await websocket.Send(new byte[] { 10, 20, 30 });
+
+            // Sending plain text
+            JObject jobject = new JObject
+            {
+                ["op"] = 1,
+                ["to"] = "/TinyIoT/TinyFarm",
+                ["fr"] = "CAdmin",
+                ["rqi"] = "req12345",
+                ["ty"] = 3,
+                ["rvi"] = "3",
+                ["pc"] = new JObject
+                {
+                    ["m2m:cnt"]= new JObject{
+                    ["rn"] = "Sensors",
+                    ["mni"]= 5
+                }
+        }
+            };
+            websocket.SendText(jobject.ToString());
+        
         }
 
   private async void OnApplicationQuit()

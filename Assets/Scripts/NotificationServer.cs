@@ -1,223 +1,223 @@
-using IoT;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
-using System;
-using System.Collections.Concurrent;
-using System.Net;
-using System.Text;
-using System.Threading;
-using UnityEngine;
+//using IoT;
+//using Newtonsoft.Json;
+//using Newtonsoft.Json.Linq;
+//using System;
+//using System.Collections.Concurrent;
+//using System.Net;
+//using System.Text;
+//using System.Threading;
+//using UnityEngine;
 
-public class NotificationServer : MonoBehaviour
-{
-    private HttpListener listener;
-    private Thread listenerThread;
-    public volatile bool isRunning = false;
-    public static int port = 6000;
+//public class NotificationServer : MonoBehaviour
+//{
+//    private HttpListener listener;
+//    private Thread listenerThread;
+//    public volatile bool isRunning = false;
+//    public static int port = 6000;
 
-    public string notiUriOverride;
+//    public string notiUriOverride;
 
-    static readonly ConcurrentQueue<Action> mainThreadJobs = new ConcurrentQueue<Action>();
+//    static readonly ConcurrentQueue<Action> mainThreadJobs = new ConcurrentQueue<Action>();
 
-    public static void EnqueueMain(Action job) => mainThreadJobs.Enqueue(job);
+//    public static void EnqueueMain(Action job) => mainThreadJobs.Enqueue(job);
 
-    void Awake()   { Application.quitting += () => StopServer(); }
-    void OnEnable(){ if (!isRunning) StartServer(); }
-    void OnDisable(){ StopServer(); }
-    void OnDestroy(){ StopServer(); }
+//    void Awake()   { Application.quitting += () => StopServer(); }
+//    void OnEnable(){ if (!isRunning) StartServer(); }
+//    void OnDisable(){ StopServer(); }
+//    void OnDestroy(){ StopServer(); }
 
-    public static void OpenPort(int port, string ruleName = "UnityPortRule")
-    {
-        string args = $"advfirewall firewall add rule name=\"{ruleName}\" dir=in action=allow protocol=TCP localport={port}";
-        System.Diagnostics.ProcessStartInfo psi = new System.Diagnostics.ProcessStartInfo("netsh", args);
-        psi.Verb = "runas"; // 관리자 권한 필요
-        psi.CreateNoWindow = true;
-        psi.UseShellExecute = true;
+//    public static void OpenPort(int port, string ruleName = "UnityPortRule")
+//    {
+//        string args = $"advfirewall firewall add rule name=\"{ruleName}\" dir=in action=allow protocol=TCP localport={port}";
+//        System.Diagnostics.ProcessStartInfo psi = new System.Diagnostics.ProcessStartInfo("netsh", args);
+//        psi.Verb = "runas"; // 관리자 권한 필요
+//        psi.CreateNoWindow = true;
+//        psi.UseShellExecute = true;
 
-        try
-        {
-            System.Diagnostics.Process.Start(psi);
-        }
-        catch (System.Exception ex)
-        {
-            UnityEngine.Debug.LogError("방화벽 설정 실패: " + ex.Message);
-        }
-    }
+//        try
+//        {
+//            System.Diagnostics.Process.Start(psi);
+//        }
+//        catch (System.Exception ex)
+//        {
+//            UnityEngine.Debug.LogError("방화벽 설정 실패: " + ex.Message);
+//        }
+//    }
 
-    private void Start()
-    {
+//    private void Start()
+//    {
 
         
 
 
-        string notiUri = GetNotiUri();
-        print($"[SUB] notiUri = {notiUri}");
-        //StartCoroutine(OneM2M.CreateSubscription("CAdmin","TinyFarm/Actuators/LED", "LEDSub", notiUri));
-        //StartCoroutine(OneM2M.CreateSubscription("CAdmin","TinyFarm/Actuators/Fan", "FanSub", notiUri));
-        //StartCoroutine(OneM2M.CreateSubscription("CAdmin","TinyFarm/Actuators/Water", "WaterSub", notiUri));
-    }
+//        string notiUri = GetNotiUri();
+//        print($"[SUB] notiUri = {notiUri}");
+//        //StartCoroutine(OneM2M.CreateSubscription("CAdmin","TinyFarm/Actuators/LED", "LEDSub", notiUri));
+//        //StartCoroutine(OneM2M.CreateSubscription("CAdmin","TinyFarm/Actuators/Fan", "FanSub", notiUri));
+//        //StartCoroutine(OneM2M.CreateSubscription("CAdmin","TinyFarm/Actuators/Water", "WaterSub", notiUri));
+//    }
 
-    void Update()
-    {
-        while (mainThreadJobs.TryDequeue(out var job))
-        {
-            try { job(); } catch (Exception e) { Debug.LogError(e); }
-        }
-    }
+//    void Update()
+//    {
+//        while (mainThreadJobs.TryDequeue(out var job))
+//        {
+//            try { job(); } catch (Exception e) { Debug.LogError(e); }
+//        }
+//    }
 
-    private string GetNotiUri()
-    {
-        if (!string.IsNullOrEmpty(notiUriOverride))
-            return notiUriOverride.TrimEnd('/');
-        return $"http://{GetLocalIP()}:{port}";
-    }
+//    private string GetNotiUri()
+//    {
+//        if (!string.IsNullOrEmpty(notiUriOverride))
+//            return notiUriOverride.TrimEnd('/');
+//        return $"http://{GetLocalIP()}:{port}";
+//    }
 
-    public void StartServer()
-    {
-        OpenPort(port);
+//    public void StartServer()
+//    {
+//        OpenPort(port);
 
-        if (isRunning) return;
-        isRunning = true;
+//        if (isRunning) return;
+//        isRunning = true;
 
-        listener = new HttpListener();
+//        listener = new HttpListener();
 
-        //string ip = GetLocalIP();
+//        //string ip = GetLocalIP();
 
-        listener = new HttpListener();
-        listener.Prefixes.Add($"http://0.0.0.0:{port}/"); // 모든 인터페이스에서 접근 가능
-        //listener.Prefixes.Add($"http://localhost:{port}/"); // 로컬 접근용
-        listener.Start();
-        //listener.Prefixes.Add($"http://{ip}:{port}/");
-        //listener.Start();
+//        listener = new HttpListener();
+//        listener.Prefixes.Add($"http://0.0.0.0:{port}/"); // 모든 인터페이스에서 접근 가능
+//        //listener.Prefixes.Add($"http://localhost:{port}/"); // 로컬 접근용
+//        listener.Start();
+//        //listener.Prefixes.Add($"http://{ip}:{port}/");
+//        //listener.Start();
 
-        listenerThread = new Thread(ListenerThread) { IsBackground = true };
-        listenerThread.Start();
+//        listenerThread = new Thread(ListenerThread) { IsBackground = true };
+//        listenerThread.Start();
 
-        if (listener != null && listener.IsListening)
-            Debug.Log("서버가 열려있습니다!");
-        else
-            Debug.Log("서버가 닫혀있거나 생성되지 않았습니다.");
-    }
+//        if (listener != null && listener.IsListening)
+//            Debug.Log("서버가 열려있습니다!");
+//        else
+//            Debug.Log("서버가 닫혀있거나 생성되지 않았습니다.");
+//    }
 
-    private void ListenerThread()
-    {
-        while (isRunning)
-        {
-            try
-            {
-                var context = listener.GetContext();                // blocking
-                ThreadPool.QueueUserWorkItem(ProcessRequest, context);
-            }
-            catch (Exception e)
-            {
-                if (isRunning) Debug.LogError($"Listener error: {e.Message}");
-            }
-        }
-    }
+//    private void ListenerThread()
+//    {
+//        while (isRunning)
+//        {
+//            try
+//            {
+//                var context = listener.GetContext();                // blocking
+//                ThreadPool.QueueUserWorkItem(ProcessRequest, context);
+//            }
+//            catch (Exception e)
+//            {
+//                if (isRunning) Debug.LogError($"Listener error: {e.Message}");
+//            }
+//        }
+//    }
 
-    private void ProcessRequest(object state)
-    {
-        print("응답들어옴");
+//    private void ProcessRequest(object state)
+//    {
+//        print("응답들어옴");
 
-        //포스트이고 /notifi인 것들만 처리
-        var context = (HttpListenerContext)state;
-        try
-        {
-            if (context.Request.HttpMethod=="POST")
-            {
-                var enc = context.Request.ContentEncoding ?? Encoding.UTF8;
-                using var r = new System.IO.StreamReader(context.Request.InputStream, enc);
-                var body = r.ReadToEnd();
+//        //포스트이고 /notifi인 것들만 처리
+//        var context = (HttpListenerContext)state;
+//        try
+//        {
+//            if (context.Request.HttpMethod=="POST")
+//            {
+//                var enc = context.Request.ContentEncoding ?? Encoding.UTF8;
+//                using var r = new System.IO.StreamReader(context.Request.InputStream, enc);
+//                var body = r.ReadToEnd();
 
-                JObject jo = null;
-                try { jo = JsonConvert.DeserializeObject<JObject>(body); } catch {}
+//                JObject jo = null;
+//                try { jo = JsonConvert.DeserializeObject<JObject>(body); } catch {}
 
-                bool vrq = jo?["m2m:sgn"]?["vrq"]?.Value<bool>() ?? false;
+//                bool vrq = jo?["m2m:sgn"]?["vrq"]?.Value<bool>() ?? false;
 
 
-                print(body);
+//                print(body);
 
-                // 응답
-                context.Response.Headers["X-M2M-RSC"]="2000";
-                context.Response.Headers["X-M2M-RI"]= context.Request.Headers["X-M2M-RI"] ?? Guid.NewGuid().ToString();
-                context.Response.Headers["X-M2M-Origin"]="mn-ae";
-                context.Response.Headers["X-M2M-RVI"]="3";
-                context.Response.StatusCode=200;
-                context.Response.ContentLength64=0;
-                context.Response.Close();
+//                // 응답
+//                context.Response.Headers["X-M2M-RSC"]="2000";
+//                context.Response.Headers["X-M2M-RI"]= context.Request.Headers["X-M2M-RI"] ?? Guid.NewGuid().ToString();
+//                context.Response.Headers["X-M2M-Origin"]="mn-ae";
+//                context.Response.Headers["X-M2M-RVI"]="3";
+//                context.Response.StatusCode=200;
+//                context.Response.ContentLength64=0;
+//                context.Response.Close();
 
-                if (!vrq)
-                {
-                    string con = jo?.SelectToken("m2m:sgn.nev.rep.m2m:cin.con")?.ToString();
-                    string sur = jo?["m2m:sgn.sur"]?.ToString();
+//                if (!vrq)
+//                {
+//                    string con = jo?.SelectToken("m2m:sgn.nev.rep.m2m:cin.con")?.ToString();
+//                    string sur = jo?["m2m:sgn.sur"]?.ToString();
 
-                    EnqueueMain(() =>
-                    {
-                        var ui = FindObjectOfType<ActuatorDisplay>();
-                        if (ui == null) return;
+//                    EnqueueMain(() =>
+//                    {
+//                        var ui = FindObjectOfType<ActuatorDisplay>();
+//                        if (ui == null) return;
 
-                        if (sur.Contains("/LED") && int.TryParse(con, out int step))
-                        {
-                            ui.LED_Slider.SetValueWithoutNotify(Mathf.Clamp(step,0,10));
-                            ui.SendMessage("ApplySunIntensityStep", step, SendMessageOptions.DontRequireReceiver);
-                        }
-                        else if (sur.Contains("/Fan"))
-                        {
-                            bool on = ActuatorDisplay.ParseOnOff(con);
-                            ui.fanToggle.SetIsOnWithoutNotify(on);
-                            ui.SendMessage("ApplyFanInstant", on, SendMessageOptions.DontRequireReceiver);
-                        }
-                        else if (sur.Contains("/Water"))
-                        {
-                            bool on = ActuatorDisplay.ParseOnOff(con);
-                            ui.waterToggle.SetIsOnWithoutNotify(on);
-                            ui.SendMessage("ApplyWaterInstant", on, SendMessageOptions.DontRequireReceiver);
-                            if (ui.waterFX) ui.waterFX.SetState(on);
-                        }
-                    });
-                }
+//                        if (sur.Contains("/LED") && int.TryParse(con, out int step))
+//                        {
+//                            ui.LED_Slider.SetValueWithoutNotify(Mathf.Clamp(step,0,10));
+//                            ui.SendMessage("ApplySunIntensityStep", step, SendMessageOptions.DontRequireReceiver);
+//                        }
+//                        else if (sur.Contains("/Fan"))
+//                        {
+//                            bool on = ActuatorDisplay.ParseOnOff(con);
+//                            ui.fanToggle.SetIsOnWithoutNotify(on);
+//                            ui.SendMessage("ApplyFanInstant", on, SendMessageOptions.DontRequireReceiver);
+//                        }
+//                        else if (sur.Contains("/Water"))
+//                        {
+//                            bool on = ActuatorDisplay.ParseOnOff(con);
+//                            ui.waterToggle.SetIsOnWithoutNotify(on);
+//                            ui.SendMessage("ApplyWaterInstant", on, SendMessageOptions.DontRequireReceiver);
+//                            if (ui.waterFX) ui.waterFX.SetState(on);
+//                        }
+//                    });
+//                }
 
-                return;
-            }
+//                return;
+//            }
 
-            context.Response.StatusCode = 404;
-            context.Response.ContentLength64 = 0;
-            context.Response.Close();
-        }
-        catch (Exception ex)
-        {
-            Debug.LogError(ex);
-            try { context.Response.StatusCode = 500; context.Response.ContentLength64 = 0; context.Response.Close(); } catch {}
-        }
-    }
+//            context.Response.StatusCode = 404;
+//            context.Response.ContentLength64 = 0;
+//            context.Response.Close();
+//        }
+//        catch (Exception ex)
+//        {
+//            Debug.LogError(ex);
+//            try { context.Response.StatusCode = 500; context.Response.ContentLength64 = 0; context.Response.Close(); } catch {}
+//        }
+//    }
 
-    public void StopServer()
-    {
-        if (!isRunning) return;
-        isRunning = false;
+//    public void StopServer()
+//    {
+//        if (!isRunning) return;
+//        isRunning = false;
 
-        try { listener?.Stop(); }  catch {}
-        try { listener?.Close(); } catch {}
+//        try { listener?.Stop(); }  catch {}
+//        try { listener?.Close(); } catch {}
 
-        if (listenerThread != null && listenerThread.IsAlive)
-        {
-            try { listenerThread.Join(1000); } catch {}
-            if (listenerThread.IsAlive) { try { listenerThread.Interrupt(); } catch {} }
-        }
-        listenerThread = null;
-        listener = null;
-    }
+//        if (listenerThread != null && listenerThread.IsAlive)
+//        {
+//            try { listenerThread.Join(1000); } catch {}
+//            if (listenerThread.IsAlive) { try { listenerThread.Interrupt(); } catch {} }
+//        }
+//        listenerThread = null;
+//        listener = null;
+//    }
 
-    private string GetLocalIP()
-    {
-        string localIP = "127.0.0.1";
-        try
-        {
-            var host = Dns.GetHostEntry(Dns.GetHostName());
-            foreach (var ip in host.AddressList)
-                if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-                    { localIP = ip.ToString(); break; }
-        } catch {}
-        return localIP;
-    }
-}
+//    private string GetLocalIP()
+//    {
+//        string localIP = "127.0.0.1";
+//        try
+//        {
+//            var host = Dns.GetHostEntry(Dns.GetHostName());
+//            foreach (var ip in host.AddressList)
+//                if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+//                    { localIP = ip.ToString(); break; }
+//        } catch {}
+//        return localIP;
+//    }
+//}

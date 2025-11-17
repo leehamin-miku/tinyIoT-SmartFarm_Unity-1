@@ -7,13 +7,21 @@ using TMPro;
 using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.UI;
+using static UnityEngine.Rendering.DebugUI;
 
 public class ActuatorDisplay : MonoBehaviour
 {
+
+    
     // ===== LED =====
     [Header("LED Control (Brightness Steps)")]
     public Slider LED_Slider;                 
     public TextMeshProUGUI LED_ValueText;
+
+    [Header("Door Control")]
+    [SerializeField] Door door;
+    public ToggleVisual doorToggle;
+
 
     [Header("lamp Light (spot)")]
     public List<Light> lamps;                         
@@ -21,38 +29,34 @@ public class ActuatorDisplay : MonoBehaviour
 
     // ===== FAN =====
     [Header("Fan Control")]
-    public Toggle fanToggle;
+    public ToggleVisual fanToggle;
     [Header("Fan Visual (Spinner)")]
-    public FanSpinner[] fanSpinners;
-    [Header("Fan Toggle Visual")]
-    public Image fanBackground;
-    public RectTransform fanHandle;
-    public Color fanOnColor  = new Color32(65,192,83,255);
-    public Color fanOffColor = new Color32(150,150,150,255);
-    public float fanAnimTime = 0.15f;
-    public Vector2 fanOffAnchoredPos = new Vector2(10f, -10f);
-    public Vector2 fanOnAnchoredPos  = new Vector2(30f, -10f);
+    public FanSpinner fanSpinner;
+
+    
+    //[Header("Fan Toggle Visual")]
+    //public Image fanBackground;
+    //public RectTransform fanHandle;
+    //public Color fanOnColor  = new Color32(65,192,83,255);
+    //public Color fanOffColor = new Color32(150,150,150,255);
+    //public float fanAnimTime = 0.15f;
+    //public Vector2 fanOffAnchoredPos = new Vector2(10f, -10f);
+    //public Vector2 fanOnAnchoredPos  = new Vector2(30f, -10f);
 
     // ===== WATER =====
     [Header("Watering Control")]
-    public Toggle waterToggle;
-    [Header("Water Toggle Visual")]
-    public Image waterBackground;
-    public RectTransform waterHandle;
-    public Color waterOnColor  = new Color32(65,192,83,255);
-    public Color waterOffColor = new Color32(150,150,150,255);
-    public float waterAnimTime = 0.15f;
-    public Vector2 waterOffAnchoredPos = new Vector2(10f, -10f);
-    public Vector2 waterOnAnchoredPos  = new Vector2(30f, -10f);
+    public ToggleVisual waterToggle;
+    //[Header("Water Toggle Visual")]
+    //public Image waterBackground;
+    //public RectTransform waterHandle;
+    //public Color waterOnColor  = new Color32(65,192,83,255);
+    //public Color waterOffColor = new Color32(150,150,150,255);
+    //public float waterAnimTime = 0.15f;
+    //public Vector2 waterOffAnchoredPos = new Vector2(10f, -10f);
+    //public Vector2 waterOnAnchoredPos  = new Vector2(30f, -10f);
 
     [Header("Water FX (optional)")]
     public WaterSprinklerPS waterFX; // 있으면 파티클 동기화
-
-    // ===== Fetch 공통 =====
-    [Header("Fetch Settings")]
-    public bool fetchOnStart = true;
-    public bool autoRefresh  = false;
-    public float refreshInterval = 5f;
 
     bool isDragging = false;
     Vector2 fanOnPos, fanOffPos, waterOnPos, waterOffPos;
@@ -76,278 +80,252 @@ public class ActuatorDisplay : MonoBehaviour
         {
             LED_Slider.wholeNumbers = true;
             LED_Slider.minValue = 0f; LED_Slider.maxValue = 10f;
-            UpdateSliderText(LED_Slider.value);
-            LED_Slider.onValueChanged.AddListener(OnSliderValueChanged);
-            ApplySunIntensityStep(Mathf.RoundToInt(LED_Slider.value));
+            LED_Slider.onValueChanged.AddListener(LEDFetch);
+            OneM2M.AddValueRefreshEvent(LEDMirror);
         }
 
         // Fan
         if (fanToggle)
         {
-            fanToggle.onValueChanged.AddListener(OnFanToggleChanged);
-            fanOffPos = fanOffAnchoredPos; fanOnPos = fanOnAnchoredPos;
-            ApplyFanInstant(fanToggle.isOn);
+            fanToggle.onValueChanged.AddListener(FanFetch);
+            OneM2M.AddValueRefreshEvent(FanMirror);
         }
 
         // Water
         if (waterToggle)
         {
-            waterToggle.onValueChanged.AddListener(OnWaterToggleChanged);
-            waterOffPos = waterOffAnchoredPos; waterOnPos = waterOnAnchoredPos;
-            ApplyWaterInstant(waterToggle.isOn);
+            waterToggle.onValueChanged.AddListener(WaterFetch);
+            OneM2M.AddValueRefreshEvent(WaterMirror);
         }
 
-        if (fetchOnStart) StartCoroutine(FetchActuatorsOnce());
-        if (autoRefresh)  autoCo = StartCoroutine(AutoRefreshLoop());
-    }
-
-    void Update()
-    {
-        if (isDragging && Input.GetMouseButtonUp(0))
+        if (doorToggle)
         {
-            isDragging = false;
-            int ledValue = Mathf.RoundToInt(LED_Slider.value);
-            StartCoroutine(SendLEDValueToServer(ledValue));
+            doorToggle.onValueChanged.AddListener(DoorFetch);
+            OneM2M.AddValueRefreshEvent(DoorMirror);
         }
+        //Mirrors();
+        Mirrors();
+        gameObject.SetActive(false);
     }
 
-    // === 공용 헬퍼 추가 ===
-    public static bool ParseOnOff(string raw)
+    private void OnEnable()
     {
-        if (string.IsNullOrEmpty(raw)) return false;
-        raw = raw.Trim();
-        return raw.Equals("ON", System.StringComparison.OrdinalIgnoreCase)
-            || raw.Equals("1")
-            || raw.Equals("true", System.StringComparison.OrdinalIgnoreCase);
+        //Mirrors();
     }
-    static string ToOnOff(bool isOn) => isOn ? "ON" : "OFF";
+
+    //void Update()
+    //{
+    //    if (isDragging && Input.GetMouseButtonUp(0))
+    //    {
+    //        isDragging = false;
+    //        int ledValue = Mathf.RoundToInt(LED_Slider.value);
+    //        StartCoroutine(SendLEDValueToServer(ledValue));
+    //    }
+    //}
+
+
 
     // ===== LED =====
-    void OnSliderValueChanged(float value)
-    {
-        int step = Mathf.RoundToInt(value);
-        UpdateSliderText(step);
-        ApplySunIntensityStep(step);
-        isDragging = true;
-    }
-    void UpdateSliderText(float v) => LED_ValueText.text = Mathf.RoundToInt(v).ToString();
-    void ApplySunIntensityStep(int step)
-    {
-        //if (!sun) return;
-        foreach(Light i in lamps)
-        {
-            i.intensity = Mathf.Clamp(step, 0, 10) * 0.1f;
-        }
-        
-    }
-    IEnumerator SendLEDValueToServer(int ledValue)
-    {
-        string jsonBody = new JObject { ["m2m:cin"] = new JObject { ["con"] = ledValue.ToString() } }.ToString();
+    //void OnSliderValueChanged(float value)
+    //{
+    //    int step = Mathf.RoundToInt(value);
+    //    UpdateSliderText(step);
+    //    ApplySunIntensityStep(step);
+    //    isDragging = true;
+    //}
 
-        // 원래 형식 (named args)
-        yield return StartCoroutine(OneM2M.PostDataCoroutine(
-            origin: "CAdmin",
-            type: 4,
-            body: jsonBody,
-            url: "TinyFarm/Actuators/LED"
-        ));
-    }
 
     // ===== FAN =====
-    void OnFanToggleChanged(bool isOn)
-    {
-        StartFanAnimate(isOn);
-        StartCoroutine(SendFanStateToServer(isOn));
-        if (fanSpinners != null)
-            foreach (var sp in fanSpinners) if (sp) sp.SetOn(isOn);
-    }
-    IEnumerator SendFanStateToServer(bool isOn)
-    {
-        string jsonBody = new JObject {
-            ["m2m:cin"] = new JObject { ["con"] = ToOnOff(isOn) }
-        }.ToString();
+    //void OnFanToggleChanged(bool isOn)
+    //{
+    //    StartFanAnimate(isOn);
+    //    StartCoroutine(SendFanStateToServer(isOn));
+    //    if (fanSpinners != null)
+    //        foreach (var sp in fanSpinners) if (sp) sp.SetOn(isOn);
+    //}
+    //IEnumerator SendFanStateToServer(bool isOn)
+    //{
+    //    string jsonBody = new JObject {
+    //        ["m2m:cin"] = new JObject { ["con"] = ToOnOff(isOn) }
+    //    }.ToString();
 
-        yield return StartCoroutine(OneM2M.PostDataCoroutine(
-            origin: "CAdmin",
-            type: 4,
-            body: jsonBody,
-            url: "TinyFarm/Actuators/Fan"
-        ));
-    }
-    void ApplyFanInstant(bool isOn)
+    //    yield return StartCoroutine(OneM2M.PostDataCoroutine(
+    //        origin: "CAdmin",
+    //        type: 4,
+    //        body: jsonBody,
+    //        url: "TinyFarm/Actuators/Fan"
+    //    ));
+    //}
+
+
+
+    void FanMirror()
     {
-        if (!fanBackground || !fanHandle) return;
-        fanBackground.color = isOn ? fanOnColor : fanOffColor;
-        fanHandle.anchoredPosition = isOn ? fanOnPos : fanOffPos;
+        bool isOn = OneM2M.ParseOnOff(OneM2M.GetFarmParameter(OneM2M.EFarmParameter.Fan));
+        fanToggle.SetIsOnWithoutNotify(isOn);
+        if (fanSpinner) fanSpinner.SetOn(isOn);
     }
-    void StartFanAnimate(bool isOn)
+
+    void FanFetch(bool isOn)
     {
-        if (fanAnimCo != null) StopCoroutine(fanAnimCo);
-        fanAnimCo = StartCoroutine(DoToggleAnimate(
-            fanBackground, fanHandle, isOn, fanOnColor, fanOffColor, fanOnPos, fanOffPos, fanAnimTime
-        ));
+        OneM2M.SetFarmParameter(OneM2M.EFarmParameter.Fan, OneM2M.ToOnOff(isOn));
+        if (fanSpinner) fanSpinner.SetOn(isOn);
     }
 
     // ===== WATER =====
-    void OnWaterToggleChanged(bool isOn)
+
+
+
+    void WaterMirror()
     {
-        Debug.Log("물틀기" + isOn);
-        StartWaterAnimate(isOn);
+        bool isOn = OneM2M.ParseOnOff(OneM2M.GetFarmParameter(OneM2M.EFarmParameter.Water));
+        //ApplyWaterInstant(isOn);
+        waterToggle.SetIsOnWithoutNotify(isOn);
         if (waterFX) waterFX.SetState(isOn); // 파티클
-        StartCoroutine(SendWaterStateToServer(isOn));
-    }
-    IEnumerator SendWaterStateToServer(bool isOn)
-    {
-        string jsonBody = new JObject {
-            ["m2m:cin"] = new JObject { ["con"] = ToOnOff(isOn) }
-        }.ToString();
-
-        yield return StartCoroutine(OneM2M.PostDataCoroutine(
-            origin: "CAdmin",
-            type: 4,
-            body: jsonBody,
-            url: "TinyFarm/Actuators/Water"
-        ));
-    }
-    void ApplyWaterInstant(bool isOn)
-    {
-        if (!waterBackground || !waterHandle) return;
-        waterBackground.color = isOn ? waterOnColor : waterOffColor;
-        waterHandle.anchoredPosition = isOn ? waterOnPos : waterOffPos;
-    }
-    void StartWaterAnimate(bool isOn)
-    {
-        if (waterAnimCo != null) StopCoroutine(waterAnimCo);
-        waterAnimCo = StartCoroutine(DoToggleAnimate(
-            waterBackground, waterHandle, isOn, waterOnColor, waterOffColor, waterOnPos, waterOffPos, waterAnimTime
-        ));
     }
 
-    // ===== 공통 토글 애니메이션 =====
-    IEnumerator DoToggleAnimate(Image bg, RectTransform knob, bool isOn,
-                                Color onColor, Color offColor,
-                                Vector2 onPos, Vector2 offPos, float secs)
+    void WaterFetch(bool isOn)
     {
-        if (!bg || !knob) yield break;
-        float t = 0f;
-        Color c0 = bg.color, c1 = isOn ? onColor : offColor;
-        Vector2 p0 = knob.anchoredPosition, p1 = isOn ? onPos : offPos;
-        while (t < secs)
+        OneM2M.SetFarmParameter(OneM2M.EFarmParameter.Water, OneM2M.ToOnOff(isOn));
+        if (waterFX) waterFX.SetState(isOn); // 파티클
+        //ApplyWaterInstant(isOn); //일단 반영하고 보자!
+    }
+
+
+
+
+    void DoorMirror()
+    {
+        bool isOn = OneM2M.ParseOnOff(OneM2M.GetFarmParameter(OneM2M.EFarmParameter.Door));
+        //ApplyWaterInstant(isOn);
+        doorToggle.SetIsOnWithoutNotify(isOn);
+        door.SetDoor(isOn);
+        //if (waterFX) waterFX.SetState(isOn); // 파티클
+    }
+
+    void DoorFetch(bool isOn)
+    {
+        OneM2M.SetFarmParameter(OneM2M.EFarmParameter.Door, OneM2M.ToOnOff(isOn));
+        //if (waterFX) waterFX.SetState(isOn); // 파티클
+        door.SetDoor(isOn);
+        //ApplyWaterInstant(isOn); //일단 반영하고 보자!
+    }
+
+
+    
+
+    void LEDMirror()
+    {
+
+        try
         {
-            t += Time.unscaledDeltaTime;
-            float u = Mathf.Clamp01(t / secs);
-            bg.color = Color.Lerp(c0, c1, u);
-            knob.anchoredPosition = Vector2.Lerp(p0, p1, u);
-            yield return null;
+            int step = int.Parse(OneM2M.GetFarmParameter(OneM2M.EFarmParameter.LED));
+            LED_ValueText.text = step.ToString();
+            LED_Slider.SetValueWithoutNotify(step);
+            foreach (Light i in lamps)
+            {
+                i.intensity = Mathf.Clamp(step, 0, 10) * 0.1f;
+            }
         }
-        bg.color = c1; knob.anchoredPosition = p1;
-    }
-
-    void OnRectTransformDimensionsChange()
-    {
-        if (fanToggle)   ApplyFanInstant(fanToggle.isOn);
-        if (waterToggle) ApplyWaterInstant(waterToggle.isOn);
-    }
-
-    // ===== FETCH & AUTO REFRESH =====
-    IEnumerator FetchActuatorsOnce()
-    {
-        yield return FetchLEDOnce();
-        yield return FetchFanOnce();
-        yield return FetchWaterOnce();
-    }
-    IEnumerator AutoRefreshLoop()
-    {
-        while (autoRefresh)
+        catch
         {
-            if (!isDragging) yield return FetchLEDOnce();
-            yield return FetchFanOnce();
-            yield return FetchWaterOnce();
-            yield return new WaitForSeconds(refreshInterval);
+            LED_ValueText.text = "--";
         }
-        autoCo = null;
-    }
-
-    IEnumerator FetchLEDOnce()
-    {
-        yield return StartCoroutine(OneM2M.GetDataCoroutine(
-            origin: "CAdmin",
-            url: "TinyFarm/Actuators/LED/la",
-            callback: (res) =>
-            {
-                try {
-                    
-                    var json = JObject.Parse(res);
-                    string raw = json["m2m:cin"]?["con"]?.ToString();
-                    print("LED갱신완료 값:" + raw);
-                    if (!string.IsNullOrEmpty(raw))
-                    {
-                        int step = Mathf.Clamp(int.Parse(raw), 0, 10);
-                        LED_Slider.SetValueWithoutNotify(step);
-                        UpdateSliderText(step);
-                        ApplySunIntensityStep(step);
-                    }
-                } catch { Debug.LogWarning("FetchLEDOnce parse failed"); }
-            }
-        ));
-    }
-
-    IEnumerator FetchFanOnce()
-    {
-
-        yield return StartCoroutine(OneM2M.GetDataCoroutine(
-            origin: "CAdmin",
-            url: "TinyFarm/Actuators/Fan/la",
-            callback: (res) =>
-            {
-                try {
-                    var json = JObject.Parse(res);
-                    string raw = json["m2m:cin"]?["con"]?.ToString();
-                    bool isOn = ParseOnOff(raw);
-                    fanToggle.SetIsOnWithoutNotify(isOn);
-                    ApplyFanInstant(isOn);
-                } catch { Debug.LogWarning("FetchFanOnce parse failed"); }
-            }
-        ));
-
+        
         
     }
 
-    IEnumerator FetchWaterOnce()
+    void LEDFetch(float value)
     {
-        yield return StartCoroutine(OneM2M.GetDataCoroutine(
-            origin: "CAdmin",
-            url: "TinyFarm/Actuators/Water/la",
-            callback: (res) =>
-            {
-                try {
-                    var json = JObject.Parse(res);
-                    string raw = json["m2m:cin"]?["con"]?.ToString();
-                    bool isOn = ParseOnOff(raw);
-                    if (waterToggle)
-                    {
-                        waterToggle.SetIsOnWithoutNotify(isOn);
-                        ApplyWaterInstant(isOn);
-                    }
-                    if (waterFX) waterFX.SetState(isOn);
-                } catch { Debug.LogWarning("FetchWaterOnce parse failed"); }
-            }
-        ));
+        int step = Mathf.RoundToInt(value);
+        LED_ValueText.text = step.ToString();
+
+
+        foreach (Light i in lamps)
+        {
+            i.intensity = Mathf.Clamp(step, 0, 10) * 0.1f;
+        }
+
+        if (step != int.Parse(OneM2M.GetFarmParameter(OneM2M.EFarmParameter.LED)))
+        {
+            OneM2M.SetFarmParameter(OneM2M.EFarmParameter.LED, step.ToString());
+        }
     }
 
-    // 런타임에 Fetch 설정 변경 (Config 패널에서 호출)
-    public void ApplyFetchSettings(bool newFetchOnStart, bool newAutoRefresh, float newInterval)
+
+    //void ApplyWaterInstant(bool isOn)
+    //{
+    //    if (!waterBackground || !waterHandle) return;
+    //    waterBackground.color = isOn ? waterOnColor : waterOffColor;
+    //    waterHandle.anchoredPosition = isOn ? waterOnPos : waterOffPos;
+
+
+
+    //    //Start Water Animation
+    //    if (waterAnimCo != null) StopCoroutine(waterAnimCo);
+    //    waterAnimCo = StartCoroutine(DoToggleAnimate(
+    //        waterBackground, waterHandle, isOn, waterOnColor, waterOffColor, waterOnPos, waterOffPos, waterAnimTime
+    //    ));
+    //}
+
+    //void ApplyFanInstant(bool isOn)
+    //{
+    //    //if (!fanBackground || !fanHandle) return;
+    //    //fanBackground.color = isOn ? fanOnColor : fanOffColor;
+    //    //fanHandle.anchoredPosition = isOn ? fanOnPos : fanOffPos;
+
+
+
+
+    //    //Start Fan Animation
+    //    //if (fanAnimCo != null) StopCoroutine(fanAnimCo);
+    //    //fanAnimCo = StartCoroutine(DoToggleAnimate(
+    //    //    fanBackground, fanHandle, isOn, fanOnColor, fanOffColor, fanOnPos, fanOffPos, fanAnimTime
+    //    //));
+    //}
+    //?
+    // ===== 공통 토글 애니메이션 =====
+    //IEnumerator DoToggleAnimate(Image bg, RectTransform knob, bool isOn,
+    //                            Color onColor, Color offColor,
+    //                            Vector2 onPos, Vector2 offPos, float secs)
+    //{
+    //    if (!bg || !knob) yield break;
+    //    float t = 0f;
+    //    Color c0 = bg.color, c1 = isOn ? onColor : offColor;
+    //    Vector2 p0 = knob.anchoredPosition, p1 = isOn ? onPos : offPos;
+    //    while (t < secs)
+    //    {
+    //        t += Time.unscaledDeltaTime;
+    //        float u = Mathf.Clamp01(t / secs);
+    //        bg.color = Color.Lerp(c0, c1, u);
+    //        knob.anchoredPosition = Vector2.Lerp(p0, p1, u);
+    //        yield return null;
+    //    }
+    //    bg.color = c1; knob.anchoredPosition = p1;
+    //}
+
+    //void OnRectTransformDimensionsChange()
+    //{
+    //    if (fanToggle)   ApplyFanInstant(fanToggle.isOn);
+    //    if (waterToggle) ApplyWaterInstant(waterToggle.isOn);
+    //}
+
+    // ===== FETCH & AUTO REFRESH =====
+    void Mirrors()
     {
-        fetchOnStart    = newFetchOnStart;
-        refreshInterval = Mathf.Max(0.1f, newInterval);
+        ////ToDo 무한반복 안되도록 로직 수정
+        //void SubFuction(Toggle toggle, OneM2M.EFarmParameter type)
+        //{
+        //    toggle.SetIsOnWithoutNotify(OneM2M.ParseOnOff(OneM2M.GetFarmParameter(type)));
+        //}
+        //SubFuction(fanToggle, OneM2M.EFarmParameter.Fan);
+        //SubFuction(waterToggle, OneM2M.EFarmParameter.Water);
 
-        if (autoRefresh != newAutoRefresh)
-        {
-            autoRefresh = newAutoRefresh;
-
-            // 기존 루프 정지/재시작
-            if (autoCo != null) { StopCoroutine(autoCo); autoCo = null; }
-            if (autoRefresh) autoCo = StartCoroutine(AutoRefreshLoop());
-        }
+        //LED_ValueText.text = Mathf.RoundToInt(float.Parse(OneM2M.GetFarmParameter(OneM2M.EFarmParameter.LED))).ToString();
+        //LED_Slider.SetValueWithoutNotify(Mathf.RoundToInt(float.Parse(OneM2M.GetFarmParameter(OneM2M.EFarmParameter.LED))));
+        FanMirror();
+        WaterMirror();
+        LEDMirror();
+        DoorMirror();
     }
 }

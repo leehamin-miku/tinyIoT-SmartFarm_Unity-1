@@ -1,0 +1,32 @@
+mergeInto(LibraryManager.library, {
+  Connect: function (urlPtr) {
+    const url = UTF8ToString(urlPtr);
+    window.socket = new WebSocket(url);
+
+    socket.onopen = function() {
+      console.log("Connected to " + url);
+      window.unityInstance.SendMessage('WebSocketClient', 'OnMessage', 'Connected');
+    };
+
+    socket.onmessage = function(event) {
+      window.unityInstance.SendMessage('WebSocketClient', 'OnMessage', event.data);
+    };
+
+    socket.onclose = function() {
+      window.unityInstance.SendMessage('WebSocketClient', 'OnMessage', 'Disconnected');
+    };
+  },
+
+  SendMessageJS: function (msgPtr) {
+    const msg = UTF8ToString(msgPtr);
+    if (window.socket && window.socket.readyState === WebSocket.OPEN) {
+      window.socket.send(msg);
+    }
+  },
+
+  CloseSocket: function () {
+    if (window.socket) {
+      window.socket.close();
+    }
+  }
+});
