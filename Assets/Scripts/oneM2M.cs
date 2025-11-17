@@ -22,10 +22,9 @@ namespace IoT
 {
     public class OneM2M : MonoBehaviour
     {
-        //public static string baseUrl = "http://192.168.82.234:3000/TinyIoT";
         static OneM2M _instance;
         string IP;
-        string baseUrl
+        string baseHTTP
         {
             get
             {
@@ -160,10 +159,10 @@ namespace IoT
             _instance.connection = new OneM2MHttps();
             _instance.farmParameter = new FarmParameter();
 
+            string yourDefaultIP = "your_Tiny_IoT_IP";
 
 #if !UNITY_WEBGL || UNITY_EDITOR
-            //IP = "192.168.82.234";
-            IP = "203.250.148.89";
+            IP = yourDefaultIP;
 #else
             string url = Application.absoluteURL;
 
@@ -189,8 +188,8 @@ namespace IoT
             }
 
 
-            Debug.LogError("IP를 찾을 수 없음. 기본 아이피로 설정");
-            IP = "203.250.148.89";
+            Debug.LogError("IP를 찾을 수 없음. 기본 아이피로 설정 :"+yourDefaultIP);
+            IP = yourDefaultIP;
 #endif
 
 
@@ -729,7 +728,7 @@ namespace IoT
             Exception httpException;
             public IEnumerator PostDataCoroutine(string origin, int type, string body, string token = "", string url = "", Action<string> callback = null)
             {
-                string endpoint = url == "" ? _instance.baseUrl + "/TinyIoT/TinyFarm/" : $"{_instance.baseUrl}/TinyIoT/TinyFarm/{url}";
+                string endpoint = url == "" ? _instance.baseHTTP + "/TinyIoT/TinyFarm/" : $"{_instance.baseHTTP}/TinyIoT/TinyFarm/{url}";
                 Debug.Log(endpoint);
                 System.Random rand = new System.Random();
                 byte[] bodyRaw = Encoding.UTF8.GetBytes(body);
@@ -769,7 +768,7 @@ namespace IoT
 
             public IEnumerator GetDataCoroutine(string origin, string token = "", string url = "", Action<string> callback = null)
             {
-                string endpoint = url == "" ? _instance.baseUrl + "/TinyIoT/TinyFarm/" : $"{_instance.baseUrl}/TinyIoT/TinyFarm/{url}";
+                string endpoint = url == "" ? _instance.baseHTTP + "/TinyIoT/TinyFarm/" : $"{_instance.baseHTTP}/TinyIoT/TinyFarm/{url}";
                 System.Random rand = new System.Random();
 
                 using (UnityWebRequest request = UnityWebRequest.Get(endpoint))
